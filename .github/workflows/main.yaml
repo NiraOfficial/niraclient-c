@@ -1,0 +1,76 @@
+name: build
+
+on: [push]
+
+jobs:
+  windows:
+    runs-on: windows-2019
+    steps:
+    - uses: actions/checkout@v1
+    - name: Cache libcurl vcpkg installation
+      id: cache-libcurl-vcpkg
+      uses: actions/cache@v3
+      with:
+        # npm cache files are stored in `~/.npm` on Linux/macOS
+        path: ./vcpkg_installed
+        key: vcpkg-libcurl-${{ hashFiles('./vcpkg.json') }}
+    - if: ${{ steps.cache-libcurl-vcpkg.outputs.cache-hit != 'true' }}
+      name: install curl
+      run: |
+        vcpkg install --triplet=x64-windows-static-md
+      shell: cmd
+    - name: build
+      run: |
+        build.bat
+      shell: cmd
+    - name: run
+      shell: cmd
+      env:
+        APP_KEY_ID_UPLOADTEST: ${{ secrets.APP_KEY_ID_UPLOADTEST }}
+        APP_KEY_SECRET_UPLOADTEST: ${{ secrets.APP_KEY_SECRET_UPLOADTEST }}
+      run: |
+        niraclient.exe
+    - name: run (forced uploads)
+      shell: cmd
+      env:
+        NIRA_FORCE_FILE_UPLOADS: 1
+        APP_KEY_ID_UPLOADTEST: ${{ secrets.APP_KEY_ID_UPLOADTEST }}
+        APP_KEY_SECRET_UPLOADTEST: ${{ secrets.APP_KEY_SECRET_UPLOADTEST }}
+      run: |
+        niraclient.exe
+    - name: prepare for artifact
+      run: |
+        mkdir artifact
+        mv vcpkg_installed artifact
+      shell: bash
+    - uses: actions/upload-artifact@v2
+      with:
+        name: libcurl-static-win64.zip
+        path: artifact
+#   - name: dir
+#     run: |
+#       ls -lR vcpkg_installed
+#     shell: bash
+#   - name: download curl
+#     run: curl -L -o curl.zip https://curl.se/windows/dl-7.86.0_2/curl-7.86.0_2-win64-mingw.zip
+#     shell: bash
+#   - name: unzip curl
+#     run: unzip curl.zip
+#     shell: bash
+#   - name: rename curl
+#     run: mv curl-7.86.0_2-win64-mingw curl
+#     shell: bash
+#   - uses: actions/upload-artifact@v2
+#     with:
+#       name: example-usage
+#       path: ./*.exe
+#   - name: run
+#     shell: bash
+#     run: |
+#       cp curl/bin/libcurl-x64.dll ./
+#   - uses: actions/checkout@v1
+#   - name: cmake configure and build
+#     run: cmake -DUSE_SHARED_MBEDTLS_LIBRARY=Off -DUSE_STATIC_MBEDTLS_LIBRARY=On -DENABLE_PROGRAMS=Off -DENABLE_TESTING=Off -D CMAKE_BUILD_TYPE=Release -A x64 .
+#   - name: cmake build
+#     run: |
+#       cmake --build . --config Release

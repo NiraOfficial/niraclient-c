@@ -1,0 +1,8 @@
+{
+    "dependencies": [ "curl" ],
+    "overrides": [
+        { "name": "curl", "version": "7.86.0" }
+    ],
+    "builtin-baseline": "59aa3a9eec682fca1c7ee9ba7ebfe7324582583a"
+}
+
