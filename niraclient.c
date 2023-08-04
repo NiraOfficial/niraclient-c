@@ -499,7 +499,7 @@ NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_nira
 
         int64_t waitTimeSec = tt * NIRA_REQUEST_RETRY_BACKOFF_FACTOR;
         struct timespec sleepTs = {waitTimeSec, 1e8};
-        fprintf(stderr, "DEBUG: HTTP Failure: %zd (%.*s), retrying (%zd) after %zd.5 s...\n", httpRespCode, 128, _niraService->responseBuf, tt, waitTimeSec);
+        fprintf(stderr, "DEBUG: HTTP Failure: %zd (%.*s), retrying (%zd) after %zd.5 s...\n", httpRespCode, 256, _niraService->responseBuf, tt, waitTimeSec);
         thrd_sleep(&sleepTs, NULL);
     }
 
@@ -511,12 +511,12 @@ NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_nira
         if (errMsgItem)
         {
             NIRA_SET_ERR_DETAIL(_niraClient, "URL:%s Curl Error:%s", url, _niraService->curlErrorDetail);
-            NIRA_SET_ERR_MSG(_niraClient, "HTTP error: %.*s [%zd], URL:%s", 32, errMsgItem->valuestring, httpRespCode, url);
+            NIRA_SET_ERR_MSG(_niraClient, "HTTP error: %.*s [%zd], URL:%s", 256, errMsgItem->valuestring, httpRespCode, url);
         }
         else
         {
             NIRA_SET_ERR_DETAIL(_niraClient, "URL:%s Curl Error:%s", url, _niraService->curlErrorDetail);
-            NIRA_SET_ERR_MSG(_niraClient, "HTTP error: %.*s [%zd], URL:%s", 32, _niraService->responseBuf, httpRespCode, url);
+            NIRA_SET_ERR_MSG(_niraClient, "HTTP error: %.*s [%zd], URL:%s", 256, _niraService->responseBuf, httpRespCode, url);
         }
 
         if (errResp)
