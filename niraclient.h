@@ -176,6 +176,8 @@ typedef struct _NiraClient
 
     time_t lastSuccessfulAuthTime;
 
+    atomic_uint abortAllRequests;
+
     atomic_int isAuthorizing;
     atomic_int failingRequestCount;
 
@@ -206,6 +208,7 @@ typedef enum _NiraStatus
     NIRA_ERROR_CURL_INIT_FAILURE,
     NIRA_ERROR_COMPRESSION_FAILURE,
     NIRA_ERROR_MISSING_CREDENTIALS,
+    NIRA_ERROR_ABORTED_BY_USER,
 
     NIRA_ERROR_COUNT,
 } NiraStatus;
@@ -240,6 +243,8 @@ extern NiraStatus niraSetAppName(NiraClient *_niraClient, const char *_appName);
 extern NiraStatus niraSetNumUploadThreads(NiraClient *_niraClient, uint8_t _numUploadThreads);
 
 extern NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys);
+
+extern NiraStatus niraAbort(NiraClient *_niraClient);
 
 // niraGetErrorMessage(), niraGetErrorDetail(), and NiraClient.statusCode:
 //

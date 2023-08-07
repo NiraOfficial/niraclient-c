@@ -35,13 +35,21 @@ int32_t main()
       , appKeySecret // app key secret: From the "App keys" area of the Nira UI.
     );
 
-    // niraAuthorize is not required - NiraClient will call it internally whenever necessary.
-    // However, it is strongly recommended to call this function just after a user provides
+    // Calling niraAuthorize is not strictly required because
+    // NiraClient will call it internally whenever necessary.
+    //
+    // However, the internal calls to niraAuthorize will retry for up to
+    // NIRA_INTERNAL_REQUEST_RETRY_TIME_TOTAL seconds (see niraclient.h),
+    // which is 1000 seconds by default.
+    //
+    // Therefore, it is STRONGLY recommended to call this function just after a user provides
     // their key id and secret within your UI, so you can provide an error message immediately
-    // if they've made a typo or entry mistake. It is also a good idea to call this function
-    // just prior to any call to niraUploadAsset, if you're using a stored app key id and secret.
-    // If it fails, this allows you to inform the user that their key id and secret was not accepted
-    // and that they may need to generate a new one.
+    // if they've made a typo or entry mistake.
+    //
+    // It is also strongly recommended to call this function just prior to any call to niraUploadAsset
+    // if you're using a stored app key id and secret. If it fails, this allows you to inform the user
+    // that their key id and secret was not accepted and that they may need to generate a new one.
+    //
     // The second parameter controls the number of seconds to retry the authorization request in case of failure.
     // 10 is generally a good number.
     NiraStatus authStatus = niraAuthorize(niraClient, 10);

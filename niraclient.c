@@ -22,6 +22,12 @@
 #include <errno.h>
 #include <time.h>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#define closesocket close
+#endif
+
 #if defined(_MSC_VER)
 #include <windows.h>
 #include <intrin.h>
@@ -446,6 +452,11 @@ NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_nira
 
     for (size_t tt = 0; tt <= retries; tt++)
     {
+        if (_niraClient->abortAllRequests)
+        {
+            break;
+        }
+
         httpRespCode = 0;
         _niraService->responseLength = 0;
         _niraService->responseBuf[0] = 0;
@@ -497,10 +508,25 @@ NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_nira
             // Fall through to the sleep/retry
         }
 
+        if (_niraClient->abortAllRequests)
+        {
+            break;
+        }
+
         int64_t waitTimeSec = tt * NIRA_REQUEST_RETRY_BACKOFF_FACTOR;
         struct timespec sleepTs = {waitTimeSec, 1e8};
         fprintf(stderr, "DEBUG: HTTP Failure: %zd (%.*s), retrying (%zd) after %zd.5 s...\n", httpRespCode, 256, _niraService->responseBuf, tt, waitTimeSec);
         thrd_sleep(&sleepTs, NULL);
+    }
+
+    if (_niraClient->abortAllRequests)
+    {
+        if (NiraSetError(_niraClient, NIRA_ERROR_ABORTED_BY_USER))
+        {
+            NIRA_UNSET_ERR_DETAIL(_niraClient);
+            NIRA_SET_ERR_MSG(_niraClient, "Asset upload aborted by user");
+            return NiraGetError(_niraClient);
+        }
     }
 
     if (NiraSetError(_niraClient, NIRA_ERROR_HTTP))
@@ -1725,6 +1751,52 @@ NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys)
     }
 
     snprintf(_niraClient->coordsys, sizeof(_niraClient->coordsys), "%s", _coordsys);
+    return NIRA_SUCCESS;
+}
+
+NiraStatus niraAbort(NiraClient *_niraClient)
+{
+    if (!isValidNiraClient(_niraClient))
+    {
+        return NIRA_ERROR_INVALID_NIRACLIENT;
+    }
+
+    _niraClient->abortAllRequests = 1;
+
+    if (NULL != _niraClient->webservice)
+    {
+        //fprintf(stderr, "Cleaned up webservice.curl\n");
+        if (NULL != _niraClient->webservice->curl)
+        {
+            curl_socket_t sockfd;
+            curl_easy_getinfo(_niraClient->webservice->curl, CURLINFO_ACTIVESOCKET, &sockfd);
+            closesocket(sockfd);
+        }
+    }
+
+    if (NULL != _niraClient->authservice)
+    {
+        if (NULL != _niraClient->authservice->curl)
+        {
+            curl_socket_t sockfd;
+            curl_easy_getinfo(_niraClient->authservice->curl, CURLINFO_ACTIVESOCKET, &sockfd);
+            closesocket(sockfd);
+        }
+    }
+
+    for (size_t tt = 0; tt < NIRA_MAX_UPLOAD_THREADS; tt++)
+    {
+        if (NULL != _niraClient->uploaders[tt])
+        {
+            if (NULL != _niraClient->uploaders[tt]->curl)
+            {
+                curl_socket_t sockfd;
+                curl_easy_getinfo(_niraClient->uploaders[tt]->curl, CURLINFO_ACTIVESOCKET, &sockfd);
+                closesocket(sockfd);
+            }
+        }
+    }
+
     return NIRA_SUCCESS;
 }
 
