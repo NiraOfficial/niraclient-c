@@ -176,10 +176,11 @@ typedef struct _NiraClient
 
     time_t lastSuccessfulAuthTime;
 
-    atomic_uint abortAllRequests;
+    atomic_uint abortAll;
 
     atomic_int isAuthorizing;
     atomic_int failingRequestCount;
+    atomic_int activeRequestCount;
 
     atomic_uint totalFilesCompleted;
     atomic_ullong totalBytesCompleted;
@@ -244,6 +245,12 @@ extern NiraStatus niraSetNumUploadThreads(NiraClient *_niraClient, uint8_t _numU
 
 extern NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys);
 
+// niraAbort() attempts to immediately close all active sockets on the provided NiraClient,
+// and causes the current niraUploadAsset() call to return as soon as they
+// are closed. This will cause active file upload requests to be canceled midway through.
+//
+// A call to niraAbort will block until the any read/write related background threads
+// are fully aborted, which makes it safe to call niraDeinit() immediately afterward.
 extern NiraStatus niraAbort(NiraClient *_niraClient);
 
 // niraGetErrorMessage(), niraGetErrorDetail(), and NiraClient.statusCode:

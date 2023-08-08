@@ -452,7 +452,7 @@ NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_nira
 
     for (size_t tt = 0; tt <= retries; tt++)
     {
-        if (_niraClient->abortAllRequests)
+        if (_niraClient->abortAll)
         {
             break;
         }
@@ -468,7 +468,11 @@ NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_nira
 
         //fprintf(stderr, "performing request (%d / %d)\n", tt, retries);
 
-        if (CURLE_OK == curl_easy_perform(_niraService->curl))
+        atomic_fetch_add(&_niraClient->activeRequestCount, 1);
+        CURLcode curlCode = curl_easy_perform(_niraService->curl);
+        atomic_fetch_add(&_niraClient->activeRequestCount, -1);
+
+        if (CURLE_OK == curlCode)
         {
             curl_easy_getinfo(_niraService->curl, CURLINFO_RESPONSE_CODE, &httpRespCode);
 
@@ -508,7 +512,7 @@ NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_nira
             // Fall through to the sleep/retry
         }
 
-        if (_niraClient->abortAllRequests)
+        if (_niraClient->abortAll)
         {
             break;
         }
@@ -519,7 +523,7 @@ NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_nira
         thrd_sleep(&sleepTs, NULL);
     }
 
-    if (_niraClient->abortAllRequests)
+    if (_niraClient->abortAll)
     {
         if (NiraSetError(_niraClient, NIRA_ERROR_ABORTED_BY_USER))
         {
@@ -1051,6 +1055,16 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         if (NIRA_SUCCESS != status)
         {
             return status;
+        }
+
+        if (_niraClient->abortAll)
+        {
+            if (NiraSetError(_niraClient, NIRA_ERROR_ABORTED_BY_USER))
+            {
+                NIRA_UNSET_ERR_DETAIL(_niraClient);
+                NIRA_SET_ERR_MSG(_niraClient, "Asset upload aborted by user");
+                return NiraGetError(_niraClient);
+            }
         }
 
         totalFileSize += assetFile->size;
@@ -1761,40 +1775,51 @@ NiraStatus niraAbort(NiraClient *_niraClient)
         return NIRA_ERROR_INVALID_NIRACLIENT;
     }
 
-    _niraClient->abortAllRequests = 1;
+    atomic_fetch_add(&_niraClient->abortAll, 1);
 
-    if (NULL != _niraClient->webservice)
+    while (true)
     {
-        //fprintf(stderr, "Cleaned up webservice.curl\n");
-        if (NULL != _niraClient->webservice->curl)
+        if (NULL != _niraClient->webservice)
         {
-            curl_socket_t sockfd;
-            curl_easy_getinfo(_niraClient->webservice->curl, CURLINFO_ACTIVESOCKET, &sockfd);
-            closesocket(sockfd);
-        }
-    }
-
-    if (NULL != _niraClient->authservice)
-    {
-        if (NULL != _niraClient->authservice->curl)
-        {
-            curl_socket_t sockfd;
-            curl_easy_getinfo(_niraClient->authservice->curl, CURLINFO_ACTIVESOCKET, &sockfd);
-            closesocket(sockfd);
-        }
-    }
-
-    for (size_t tt = 0; tt < NIRA_MAX_UPLOAD_THREADS; tt++)
-    {
-        if (NULL != _niraClient->uploaders[tt])
-        {
-            if (NULL != _niraClient->uploaders[tt]->curl)
+            //fprintf(stderr, "Cleaned up webservice.curl\n");
+            if (NULL != _niraClient->webservice->curl)
             {
                 curl_socket_t sockfd;
-                curl_easy_getinfo(_niraClient->uploaders[tt]->curl, CURLINFO_ACTIVESOCKET, &sockfd);
+                curl_easy_getinfo(_niraClient->webservice->curl, CURLINFO_ACTIVESOCKET, &sockfd);
                 closesocket(sockfd);
             }
         }
+
+        if (NULL != _niraClient->authservice)
+        {
+            if (NULL != _niraClient->authservice->curl)
+            {
+                curl_socket_t sockfd;
+                curl_easy_getinfo(_niraClient->authservice->curl, CURLINFO_ACTIVESOCKET, &sockfd);
+                closesocket(sockfd);
+            }
+        }
+
+        for (size_t tt = 0; tt < NIRA_MAX_UPLOAD_THREADS; tt++)
+        {
+            if (NULL != _niraClient->uploaders[tt])
+            {
+                if (NULL != _niraClient->uploaders[tt]->curl)
+                {
+                    curl_socket_t sockfd;
+                    curl_easy_getinfo(_niraClient->uploaders[tt]->curl, CURLINFO_ACTIVESOCKET, &sockfd);
+                    closesocket(sockfd);
+                }
+            }
+        }
+
+        if (_niraClient->activeRequestCount == 0)
+        {
+            break;
+        }
+
+        struct timespec sleepTs = {0, 2e8}; // 200ms
+        thrd_sleep(&sleepTs, NULL);
     }
 
     return NIRA_SUCCESS;
