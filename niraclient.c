@@ -654,6 +654,33 @@ NiraStatus makeFileUploadPartRequest(NiraClient *_niraClient, NiraService *_nira
     return NIRA_SUCCESS;
 }
 
+NiraStatus makeGetRequest(NiraClient *_niraClient, NiraService *_niraService, const char *uri, int64_t _retryTimeSeconds)
+{
+    struct curl_slist requestHeaders[] = {
+      { _niraClient->orgHeader           , &requestHeaders[1] },
+      { _niraClient->userAgentHeader     , &requestHeaders[2] },
+      { _niraClient->apiTokenHeader      , NULL               },
+    };
+
+    niraServiceReset(_niraClient, _niraService, requestHeaders);
+
+    curl_easy_setopt(_niraService->curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(_niraService->curl, CURLOPT_URL, uri);
+
+    curl_easy_setopt(_niraService->curl, CURLOPT_WRITEFUNCTION, niraCurlWriteCallback);
+    curl_easy_setopt(_niraService->curl, CURLOPT_WRITEDATA, (void *)_niraService);
+
+    NiraStatus reqStatus = performRequestWithRetries(_niraClient, _niraService, /* _doAutoAuthTokenRefresh */ true, _retryTimeSeconds);
+    if (NIRA_SUCCESS != reqStatus)
+    {
+        return NiraGetError(_niraClient);
+    }
+
+    //fprintf(stderr, "Got the http response: %d", reqStatus);
+
+    return NIRA_SUCCESS;
+}
+
 NiraStatus makePostRequestJson(NiraClient *_niraClient, NiraService *_niraService, const char *uri, const cJSON *requestBody)
 {
     struct curl_slist requestHeaders[] = {
@@ -1643,6 +1670,7 @@ NiraClient *niraInit(const char *_orgName, const char *_userAgent)
     snprintf(niraClient->filesEndpoint, sizeof(niraClient->filesEndpoint), "https://%s/api/files", _orgName);
     snprintf(niraClient->assetsEndpoint, sizeof(niraClient->assetsEndpoint), "https://%s/api/assets", _orgName);
     snprintf(niraClient->orgHeader, sizeof(niraClient->orgHeader), "x-nira-org: %s", _orgName);
+    snprintf(niraClient->coordsysEndpoint, sizeof(niraClient->coordsysEndpoint), "https://%s/api/coordsys", _orgName);
 
     snprintf(niraClient->apiTokenHeader, sizeof(niraClient->apiTokenHeader), "x-api-token: invalid");
 
@@ -1757,14 +1785,53 @@ NiraStatus niraSetAppName(NiraClient *_niraClient, const char *_appName)
     return NIRA_SUCCESS;
 }
 
-NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys)
+NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys, int64_t _retryTimeSeconds)
 {
     if (!isValidNiraClient(_niraClient))
     {
         return NIRA_ERROR_INVALID_NIRACLIENT;
     }
 
+    char coordsysReqUrl[1024];
+    snprintf(coordsysReqUrl, sizeof(coordsysReqUrl), "%s/%s", _niraClient->coordsysEndpoint, _coordsys);
+
+    NiraStatus reqStatus = makeGetRequest(_niraClient, _niraClient->webservice, coordsysReqUrl, _retryTimeSeconds);
+    if (NIRA_SUCCESS != reqStatus)
+    {
+        return NiraGetError(_niraClient);
+    }
+
+    cJSON *coordsysResp = cJSON_Parse(_niraClient->webservice->responseBuf);
+    if (NULL == coordsysResp)
+    {
+        if (NiraSetError(_niraClient, NIRA_ERROR_JSON_PARSE))
+        {
+            NIRA_SET_ERR_DETAIL(_niraClient, "Response: %.*s", 128, _niraClient->webservice->responseBuf);
+            NIRA_SET_ERR_MSG(_niraClient, "Could not parse coordsys response");
+        }
+        return NiraGetError(_niraClient);
+    }
+
+    cJSON *supportedItem = cJSON_GetObjectItem(coordsysResp, "isSupported");
+    if (NULL != supportedItem && !supportedItem->valueint)
+    {
+        cJSON *supportErrMsg = cJSON_GetObjectItem(coordsysResp, "isSupportedMsg");
+
+        if (NiraSetError(_niraClient, NIRA_ERROR_UNSUPPORTED_COORDINATE_SYSTEM))
+        {
+            NIRA_UNSET_ERR_DETAIL(_niraClient);
+            NIRA_SET_ERR_MSG(_niraClient, "%s", supportErrMsg->valuestring);
+        }
+
+        cJSON_Delete(coordsysResp);
+
+        return NiraGetError(_niraClient);
+    }
+
+    cJSON_Delete(coordsysResp);
+
     snprintf(_niraClient->coordsys, sizeof(_niraClient->coordsys), "%s", _coordsys);
+
     return NIRA_SUCCESS;
 }
 

@@ -21,11 +21,6 @@ int32_t main()
     // This is an important call - Reach out to Nira for the correct string value to use here.
     //niraSetAppName(niraClient, "ask_nira_support_about_this_value!");
 
-    // This is a very important call if you're uploading a georeferenced dataset. When calling this function, you must pass the epsg string that corresponds with
-    // how your geometry and camera data were saved.
-    // "epsg:4978" is what we recommend, but we support just about any cartesian coordinate system. For example, UTM zones are also supported (e.g. "epsg:32632").
-    //niraSetCoordsys(niraClient, "epsg:4978");
-
     char *appKeyId     = getenv("APP_KEY_ID_UPLOADTEST");
     char *appKeySecret = getenv("APP_KEY_SECRET_UPLOADTEST");
 
@@ -35,29 +30,77 @@ int32_t main()
       , appKeySecret // app key secret: From the "App keys" area of the Nira UI.
     );
 
-    // Calling niraAuthorize is not strictly required because
-    // NiraClient will call it internally whenever necessary.
+    // niraAuthorize:
     //
-    // However, the internal calls to niraAuthorize will retry for up to
-    // NIRA_INTERNAL_REQUEST_RETRY_TIME_TOTAL seconds (see niraclient.h),
-    // which is 1000 seconds by default.
+    // The niraAuthorize function should be called just after a user provides their key id and secret
+    // within your UI. If the function fails, you can provide an error message immediately,
+    // letting the user know that they've most likely made a typo or entry mistake.
     //
-    // Therefore, it is STRONGLY recommended to call this function just after a user provides
-    // their key id and secret within your UI, so you can provide an error message immediately
-    // if they've made a typo or entry mistake.
+    // It is also strongly recommended to call this function just prior to calling niraSetCoordsys and niraUploadAsset.
+    // So the function call sequence prior to any upload should be like this:
+    // niraAuthorize(...)
+    // niraSetCoordsys(...) // If you want georeferencing
+    // niraUploadAsset(...)
     //
-    // It is also strongly recommended to call this function just prior to any call to niraUploadAsset
-    // if you're using a stored app key id and secret. If it fails, this allows you to inform the user
-    // that their key id and secret was not accepted and that they may need to generate a new one.
+    // This way, if the niraAuthorize call fails, this allows you to inform the user that their key id and secret was not
+    // accepted and that they may need to generate a new one, instead of moving onto the niraSetCoordsys or
+    // niraUploadAsset calls.
     //
-    // The second parameter controls the number of seconds to retry the authorization request in case of failure.
-    // 10 is generally a good number.
-    NiraStatus authStatus = niraAuthorize(niraClient, 10);
+    // The second parameter to niraAuthorize controls the number of seconds to retry the authorization
+    // request in case of failure. 10 is generally a good number.
+    NiraStatus authStatus = niraAuthorize(niraClient, /*request retry time in seconds:*/ 10);
     if (NIRA_SUCCESS != authStatus)
     {
         fprintf(stderr, "Error Message:\n%s\nError Detail:\n%s\n", niraGetErrorMessage(niraClient), niraGetErrorDetail(niraClient));
         return -1;
     }
+
+    // niraSetCoordsys:
+    //
+    // This is an optional call, but is very important if you're uploading a georeferenced dataset.
+    // When calling niraSetCoordsys, you must pass the epsg string that corresponds with how your geometry and camera data were saved.
+    //
+    // Using the epsg string for the UTM zone correspondong with the asset's geographic location works well here.
+    // For example, "epsg:32632" is the UTM Zone covering Denmark, Netherlands, Germany, etc and "epsg:32617" is the UTM zone covering the east coast of the U.S.
+    // Nira also supports just about any cartesian, ENU coordinate system, so if a use prefers to use a surveying coordinate system local to their country, this is fine.
+    // For example, someone in Belgium may prefer "epsg:31370", which is not a UTM zone, but it is supported because it is cartesian and ENU.
+    //
+    // This function makes a network request to check whether the specified coordinate system is supported by Nira, and returns an error if it is not.
+    //
+    // If this function returns the status NIRA_ERROR_UNSUPPORTED_COORDINATE_SYSTEM, it means the provided coordinate system is not supported by Nira.
+    // If this happens, it's best to display to the user the error message string returned by niraGetErrorMessage(niraClient), then
+    // do not allow the user to upload the dataset.
+    //
+    // For reference, the error message string returned by niraGetErrorMessage(niraClient) will be something like:
+    // "The coordinate system EPSG:4326 is not supported by Nira. Please upload data using a Cartesian coordinate system such as a UTM Zone".
+    // In the error dialog presented to the user, underneath the error message, it's a good idea to give a hint how the user can change their coordinate system
+    // within your application's UI in order to resolve the issue.
+    //
+    // As mentioned above, it's best to call niraSetCoordsys function just after niraAuthorize and just before calling niraUploadAsset, in a sequence like this:
+    // niraAuthorize(...)
+    // niraSetCoordsys(...) // If you want georeferencing
+    // niraUploadAsset(...)
+    //
+    // The third parameter to niraSetCoordsys controls the number of seconds to retry the request in case of failure. 10 is generally a good number.
+    //
+    #if 0 // Use this code if your asset is georeferenced!
+    NiraStatus coordsysStatus = niraSetCoordsys(niraClient, "epsg:32632", /*request retry time in seconds:*/ 10);
+    // For reference, this will return an error because epsg:4326 is not cartesian and is thus unsupported by Nira:
+    //NiraStatus coordsysStatus = niraSetCoordsys(niraClient, "epsg:4326", /*request retry time in seconds:*/ 10);
+    if (NIRA_SUCCESS != coordsysStatus)
+    {
+        // In the case of NIRA_ERROR_UNSUPPORTED_COORDINATE_SYSTEM, you can provide the error message directly to the user.
+        if (NIRA_ERROR_UNSUPPORTED_COORDINATE_SYSTEM == coordsysStatus)
+        {
+            fprintf(stderr, "%s\n", niraGetErrorMessage(niraClient));
+        }
+        else
+        {
+            fprintf(stderr, "Error Message:\n%s\nError Detail:\n%s\n", niraGetErrorMessage(niraClient), niraGetErrorDetail(niraClient));
+        }
+        return -1;
+    }
+    #endif
 
     // Provide an array of NiraAssetFile struct instances that will be passed to niraUploadAsset() below.
     // This is a very basic example consisting of an obj, mtl, and png.

@@ -156,6 +156,7 @@ typedef struct _NiraClient
 
     char orgName[256];
     char jobsEndpoint[512];
+    char coordsysEndpoint[512];
     char niraConfigEndpoint[512];
     char filesEndpoint[512];
     char assetsEndpoint[512];
@@ -210,6 +211,7 @@ typedef enum _NiraStatus
     NIRA_ERROR_COMPRESSION_FAILURE,
     NIRA_ERROR_MISSING_CREDENTIALS,
     NIRA_ERROR_ABORTED_BY_USER,
+    NIRA_ERROR_UNSUPPORTED_COORDINATE_SYSTEM,
 
     NIRA_ERROR_COUNT,
 } NiraStatus;
@@ -243,7 +245,7 @@ extern NiraStatus niraSetAppName(NiraClient *_niraClient, const char *_appName);
 
 extern NiraStatus niraSetNumUploadThreads(NiraClient *_niraClient, uint8_t _numUploadThreads);
 
-extern NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys);
+extern NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys, int64_t _retryTimeSeconds);
 
 // niraAbort() attempts to immediately close all active sockets on the provided NiraClient,
 // and causes the current niraUploadAsset() call to return as soon as they
