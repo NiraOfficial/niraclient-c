@@ -1071,34 +1071,6 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
     _niraClient->totalFileSize = 0;
     _niraClient->totalFileCount = _fileCount;
 
-    size_t totalFileSize = 0;
-
-    // Get hashes and sizes of all files
-    for (size_t ff = 0; ff < _fileCount; ff++)
-    {
-        NiraAssetFile *assetFile = &_files[ff];
-
-        NiraStatus status = getFileHashAndSize(_niraClient, assetFile->path, /*out*/ assetFile->hashStr, /*out*/ &assetFile->size);
-        if (NIRA_SUCCESS != status)
-        {
-            return status;
-        }
-
-        if (_niraClient->abortAll)
-        {
-            if (NiraSetError(_niraClient, NIRA_ERROR_ABORTED_BY_USER))
-            {
-                NIRA_UNSET_ERR_DETAIL(_niraClient);
-                NIRA_SET_ERR_MSG(_niraClient, "Asset upload aborted by user");
-                return NiraGetError(_niraClient);
-            }
-        }
-
-        totalFileSize += assetFile->size;
-    }
-
-    _niraClient->totalFileSize = totalFileSize;
-
     char jobUuidStr[40];
 
     if (0 != uuidGenV4(jobUuidStr))
@@ -1112,6 +1084,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         return NiraGetError(_niraClient);
     }
 
+    // First, inform the server that we're preparing to send it some files.
     uint32_t jobId;
     char uploadServiceHost[256];
     {
@@ -1203,6 +1176,68 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         snprintf(_niraClient->assetUrl, sizeof(_niraClient->assetUrl), "https://%s/a/%s", _niraClient->orgName, assetShortUuidItem->valuestring);
 
         cJSON_Delete(jobResp);
+    }
+
+    size_t totalFileSize = 0;
+
+    // Get hashes and sizes of all files
+    for (size_t ff = 0; ff < _fileCount; ff++)
+    {
+        NiraAssetFile *assetFile = &_files[ff];
+
+        NiraStatus status = getFileHashAndSize(_niraClient, assetFile->path, /*out*/ assetFile->hashStr, /*out*/ &assetFile->size);
+        if (NIRA_SUCCESS != status)
+        {
+            return status;
+        }
+
+        if (_niraClient->abortAll)
+        {
+            if (NiraSetError(_niraClient, NIRA_ERROR_ABORTED_BY_USER))
+            {
+                NIRA_UNSET_ERR_DETAIL(_niraClient);
+                NIRA_SET_ERR_MSG(_niraClient, "Asset upload aborted by user");
+                return NiraGetError(_niraClient);
+            }
+        }
+
+        totalFileSize += assetFile->size;
+    }
+
+    _niraClient->totalFileSize = totalFileSize;
+
+    // Inform the server that we're about to upload files.
+    {
+        cJSON *updateJobRequest = cJSON_CreateObject();
+
+        cJSON_AddStringToObject(updateJobRequest, "status", "uploading");
+        cJSON_AddStringToObject(updateJobRequest, "batchId", jobUuidStr);
+
+        char jobPatchEndpoint[1024];
+        snprintf(jobPatchEndpoint, sizeof(jobPatchEndpoint), "%s/%d", _niraClient->jobsEndpoint, jobId);
+
+        NiraStatus reqStatus = makePatchRequestJson(_niraClient, _niraClient->webservice, jobPatchEndpoint, updateJobRequest);
+        cJSON_Delete(updateJobRequest);
+
+        if (NIRA_SUCCESS != reqStatus)
+        {
+            return NiraGetError(_niraClient);
+        }
+
+        cJSON *updateJobResp = cJSON_Parse(_niraClient->webservice->responseBuf);
+
+        if (NULL == updateJobResp)
+        {
+            if (NiraSetError(_niraClient, NIRA_ERROR_JSON_PARSE))
+            {
+                NIRA_SET_ERR_DETAIL(_niraClient, "Response: %.*s", 128, _niraClient->webservice->responseBuf);
+                NIRA_SET_ERR_MSG(_niraClient, "Could not parse update job response");
+            }
+
+            return NiraGetError(_niraClient);
+        }
+
+        cJSON_Delete(updateJobResp);
     }
 
     int32_t ff = 0;
