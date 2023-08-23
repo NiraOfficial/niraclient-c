@@ -1189,6 +1189,11 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         totalFileSize += assetFile->size;
     }
 
+    // By setting _niraClient->totalFileSize to non-zero here, we signify to the caller
+    // that it can start using the progress related variables (totalFileSize, totalBytesCompleted,
+    // totalFilesCompleted, etc.) for a progress bar or progress display of some kind.
+    _niraClient->totalFileSize = totalFileSize;
+
     const uint8_t forceFileUploads = NULL != getenv("NIRA_FORCE_FILE_UPLOADS");
 
     int32_t ff = 0;
@@ -1301,11 +1306,6 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
     {
         return NiraGetError(_niraClient);
     }
-
-    // By setting _niraClient->totalFileSize to non-zero here, we signify to the caller
-    // that it can start using the progress related variables (totalFileSize, totalBytesCompleted,
-    // totalFilesCompleted, etc.) for a progress bar or progress display of some kind.
-    _niraClient->totalFileSize = totalFileSize;
 
     char uploadServiceHost[256];
 
