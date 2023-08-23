@@ -186,7 +186,7 @@ typedef struct _NiraClient
     atomic_uint totalFilesCompleted;
     atomic_ullong totalBytesCompleted;
 
-    size_t totalFileSize;
+    volatile size_t totalFileSize;
     size_t totalFileCount;
 
     NiraService *uploaders[NIRA_MAX_UPLOAD_THREADS];

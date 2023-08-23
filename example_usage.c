@@ -182,7 +182,15 @@ int printUploadProgress(void *_nc)
 
         if (0 == niraClient->totalFileSize)
         {
-            fprintf(stderr, "Gathering filesize information...\n");
+            // When niraClient->totalFileSize is 0, this means niraUploadAsset()
+            // is still gathering filesizes, hashing files, and determining which
+            // files the server already has, so the progress related variables
+            // do not yet contain meaningful values. Therefore, you should not
+            // display any progress bar updates until the totalFileSize becomes
+            // non-zero.
+            //
+            // During this time, you can display something like "Preparing files for upload..."
+            fprintf(stderr, "Preparing files for upload...\n");
         }
         else
         {

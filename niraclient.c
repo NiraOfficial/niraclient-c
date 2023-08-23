@@ -1086,7 +1086,6 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
     // First, inform the server that we're preparing to send it some files.
     uint32_t jobId;
-    char uploadServiceHost[256];
     {
         cJSON *jobCreationRequest = cJSON_CreateObject();
 
@@ -1147,20 +1146,6 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
         jobId = jobIdItem->valueint;
 
-        cJSON *uploadServiceHostItem = cJSON_GetObjectItem(jobResp, "uploadServiceHost");
-        if (!uploadServiceHostItem)
-        {
-            if (NiraSetError(_niraClient, NIRA_ERROR_JSON_MISSING_ATTRIBUTE))
-            {
-                NIRA_SET_ERR_DETAIL(_niraClient, "Response: %.*s", 128, _niraClient->webservice->responseBuf);
-                NIRA_SET_ERR_MSG(_niraClient, "Missing uploadServiceHost in upload job creation response");
-            }
-            cJSON_Delete(jobResp);
-            return NiraGetError(_niraClient);
-        }
-
-        snprintf(uploadServiceHost, sizeof(uploadServiceHost), "%s", uploadServiceHostItem->valuestring);
-
         cJSON *assetShortUuidItem = cJSON_GetObjectItem(jobResp, "assetShortUuid");
         if (!assetShortUuidItem)
         {
@@ -1204,45 +1189,9 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         totalFileSize += assetFile->size;
     }
 
-    _niraClient->totalFileSize = totalFileSize;
-
-    // Inform the server that we're about to upload files.
-    {
-        cJSON *updateJobRequest = cJSON_CreateObject();
-
-        cJSON_AddStringToObject(updateJobRequest, "status", "uploading");
-        cJSON_AddStringToObject(updateJobRequest, "batchId", jobUuidStr);
-
-        char jobPatchEndpoint[1024];
-        snprintf(jobPatchEndpoint, sizeof(jobPatchEndpoint), "%s/%d", _niraClient->jobsEndpoint, jobId);
-
-        NiraStatus reqStatus = makePatchRequestJson(_niraClient, _niraClient->webservice, jobPatchEndpoint, updateJobRequest);
-        cJSON_Delete(updateJobRequest);
-
-        if (NIRA_SUCCESS != reqStatus)
-        {
-            return NiraGetError(_niraClient);
-        }
-
-        cJSON *updateJobResp = cJSON_Parse(_niraClient->webservice->responseBuf);
-
-        if (NULL == updateJobResp)
-        {
-            if (NiraSetError(_niraClient, NIRA_ERROR_JSON_PARSE))
-            {
-                NIRA_SET_ERR_DETAIL(_niraClient, "Response: %.*s", 128, _niraClient->webservice->responseBuf);
-                NIRA_SET_ERR_MSG(_niraClient, "Could not parse update job response");
-            }
-
-            return NiraGetError(_niraClient);
-        }
-
-        cJSON_Delete(updateJobResp);
-    }
+    const uint8_t forceFileUploads = NULL != getenv("NIRA_FORCE_FILE_UPLOADS");
 
     int32_t ff = 0;
-
-    const uint8_t forceFileUploads = NULL != getenv("NIRA_FORCE_FILE_UPLOADS");
 
     // Create file records for all files
     #pragma omp parallel num_threads(_niraClient->numUploadThreads)
@@ -1351,6 +1300,61 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
     if (NiraHasError(_niraClient))
     {
         return NiraGetError(_niraClient);
+    }
+
+    // By setting _niraClient->totalFileSize to non-zero here, we signify to the caller
+    // that it can start using the progress related variables (totalFileSize, totalBytesCompleted,
+    // totalFilesCompleted, etc.) for a progress bar or progress display of some kind.
+    _niraClient->totalFileSize = totalFileSize;
+
+    char uploadServiceHost[256];
+
+    // Inform the server that we're about to upload files by setting the job status to "uploading".
+    {
+        cJSON *updateJobRequest = cJSON_CreateObject();
+
+        cJSON_AddStringToObject(updateJobRequest, "status", "uploading");
+        cJSON_AddStringToObject(updateJobRequest, "batchId", jobUuidStr);
+
+        char jobPatchEndpoint[1024];
+        snprintf(jobPatchEndpoint, sizeof(jobPatchEndpoint), "%s/%d", _niraClient->jobsEndpoint, jobId);
+
+        NiraStatus reqStatus = makePatchRequestJson(_niraClient, _niraClient->webservice, jobPatchEndpoint, updateJobRequest);
+        cJSON_Delete(updateJobRequest);
+
+        if (NIRA_SUCCESS != reqStatus)
+        {
+            return NiraGetError(_niraClient);
+        }
+
+        cJSON *updateJobResp = cJSON_Parse(_niraClient->webservice->responseBuf);
+
+        if (NULL == updateJobResp)
+        {
+            if (NiraSetError(_niraClient, NIRA_ERROR_JSON_PARSE))
+            {
+                NIRA_SET_ERR_DETAIL(_niraClient, "Response: %.*s", 128, _niraClient->webservice->responseBuf);
+                NIRA_SET_ERR_MSG(_niraClient, "Could not parse update job response");
+            }
+
+            return NiraGetError(_niraClient);
+        }
+
+        cJSON *uploadServiceHostItem = cJSON_GetObjectItem(updateJobResp, "uploadServiceHost");
+        if (!uploadServiceHostItem || !uploadServiceHostItem->valuestring || 0 == uploadServiceHostItem->valuestring[0])
+        {
+            if (NiraSetError(_niraClient, NIRA_ERROR_JSON_MISSING_ATTRIBUTE))
+            {
+                NIRA_SET_ERR_DETAIL(_niraClient, "Response: %.*s", 128, _niraClient->webservice->responseBuf);
+                NIRA_SET_ERR_MSG(_niraClient, "Missing uploadServiceHost in job update response");
+            }
+            cJSON_Delete(updateJobResp);
+            return NiraGetError(_niraClient);
+        }
+
+        snprintf(uploadServiceHost, sizeof(uploadServiceHost), "%s", uploadServiceHostItem->valuestring);
+
+        cJSON_Delete(updateJobResp);
     }
 
     // Get part counts of all files
