@@ -1951,4 +1951,9 @@ const char *niraGetErrorDetail(NiraClient *_niraClient)
     return errorDetail;
 }
 
+const char *niraGetClientVersion()
+{
+    return "bf1d8641";
+}
+
 /* vim: set sw=4 ts=4 expandtab: */

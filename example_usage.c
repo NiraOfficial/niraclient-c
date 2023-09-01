@@ -7,6 +7,16 @@ char *getRandomAssetName(char *_assetNameBuf, size_t _assetNameBufSize, const ch
 
 int32_t main()
 {
+    // It's a good idea to display the Nira client version string in the UI.
+    // This is useful for debugging and customer support purposes.
+    // To retrieve the version string, call niraGetClientVersion().
+    //
+    // It's nice to display this somewhere prominent in the uploader UI,
+    // both just before and during the upload process.
+    // This way, it is visible in screenshots and screencaptures that users
+    // may provide in support requests.
+    fprintf(stderr, "Nira Uploader (%s)\n", niraGetClientVersion());
+
     // In your implementation, you can allow for specification of an asset name, and/or default
     // to using the "project name", if your application already has a concept of that.
     // For testing and easy iteration during development, we just generate a random name, here.

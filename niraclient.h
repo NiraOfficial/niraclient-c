@@ -247,6 +247,8 @@ extern NiraStatus niraSetNumUploadThreads(NiraClient *_niraClient, uint8_t _numU
 
 extern NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys, int64_t _retryTimeSeconds);
 
+extern const char *niraGetClientVersion();
+
 // niraAbort() attempts to immediately close all active sockets on the provided NiraClient,
 // and causes the current niraUploadAsset() call to return as soon as they
 // are closed. This will cause active file upload requests to be canceled midway through.
