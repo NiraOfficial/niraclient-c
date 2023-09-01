@@ -1237,8 +1237,14 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
                 cJSON_AddStringToObject(fileRequestBody, "type", "photogrammetry_image");
             } break;
 
+            case NIRA_FILETYPE_MATERIAL:
+            {
+                cJSON_AddStringToObject(fileRequestBody, "type", "material");
+            } break;
+
             default:
             {
+                // Allow the server to figure out the others
             } break;
         }
 
