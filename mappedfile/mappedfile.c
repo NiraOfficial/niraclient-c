@@ -44,15 +44,24 @@
 #endif /* !_WIN32 && !HAVE_MMAP */
 
 /* returns NULL on failure */
+#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+char *map_file(const wchar_t *path, size_t *length)
+#else
 char *map_file(const char *path, size_t *length)
+#endif
 {
 	char *data = NULL;
 	size_t size = 0;
 
 #ifdef _WIN32
 	HANDLE hMap;
+#if defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+	HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL,
+							   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+#else
 	HANDLE hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
 							   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+#endif
 	if (hFile == INVALID_HANDLE_VALUE)
 		return NULL;
 
@@ -60,7 +69,11 @@ char *map_file(const char *path, size_t *length)
 	if (size == INVALID_FILE_SIZE || size == 0)
 		goto fail;
 
+#if defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+	hMap = CreateFileMappingW(hFile, NULL, PAGE_READONLY, 0, size, NULL);
+#else
 	hMap = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, size, NULL);
+#endif
 	if (!hMap)
 		goto fail;
 

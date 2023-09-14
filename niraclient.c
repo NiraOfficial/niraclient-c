@@ -748,21 +748,31 @@ NiraStatus makePatchRequestJson(NiraClient *_niraClient, NiraService *_niraServi
     return NIRA_SUCCESS;
 }
 
-int32_t getFileHashAndSize(NiraClient *_niraClient, const char *_filepath, /*out*/ char *_uuidStr, /*out*/ size_t *_fileSize)
+
+int32_t getFileHashAndSize(NiraClient *_niraClient, NiraAssetFile *_assetFile)
 {
-    FILE *fh = fopen(_filepath, "rb");
+    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+    FILE *fh;
+    _wfopen_s(&fh, _assetFile->pathW, L"rb");
+    #else
+    FILE *fh = fopen(_assetFile->path, "rb");
+    #endif
     if (NULL == fh)
     {
         if (NiraSetError(_niraClient, NIRA_ERROR_FILE_IO))
         {
             NIRA_SET_ERR_DETAIL(_niraClient, "fopen: %s (%d)", strerror(errno), errno);
-            NIRA_SET_ERR_MSG(_niraClient, "File does not exist or it's not readable: %s", _filepath);
+            NIRA_SET_ERR_MSG(_niraClient, "File does not exist or it's not readable: %s", _assetFile->path);
         }
         return NiraGetError(_niraClient);
     }
     fclose(fh);
 
-    char *mappedFile = map_file(_filepath, /*out*/ _fileSize);
+    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+    char *mappedFile = map_file(_assetFile->pathW, /*out*/ &_assetFile->size);
+    #else
+    char *mappedFile = map_file(_assetFile->path, /*out*/ &_assetFile->size);
+    #endif
 
     if (NULL == mappedFile)
     {
@@ -772,20 +782,20 @@ int32_t getFileHashAndSize(NiraClient *_niraClient, const char *_filepath, /*out
         if (NiraSetError(_niraClient, NIRA_ERROR_FILE_IO))
         {
             NIRA_SET_ERR_DETAIL(_niraClient, "map_file: %s (%d)", strerror(errno), errno);
-            NIRA_SET_ERR_MSG(_niraClient, "Could not open or read file %s", _filepath);
+            NIRA_SET_ERR_MSG(_niraClient, "Could not open or read file %s", _assetFile->path);
         }
         return NiraGetError(_niraClient);
     }
 
-    meow_u128 meow = MeowHash(MeowDefaultSeed, *_fileSize, mappedFile);
+    meow_u128 meow = MeowHash(MeowDefaultSeed, _assetFile->size, mappedFile);
 
     uint64_t meow64[2];
     meow64[0] = MeowU64From(meow, 0);
     meow64[1] = MeowU64From(meow, 1);
 
-    my_uuid_unparse((unsigned char*)meow64, _uuidStr);
+    my_uuid_unparse((unsigned char*)meow64, _assetFile->hashStr);
 
-    unmap_file(mappedFile, *_fileSize);
+    unmap_file(mappedFile, _assetFile->size);
 
     //fprintf(stdout, "GOT HASH for %s: %s\n", _filepath, _uuidStr);
 
@@ -1056,12 +1066,84 @@ const char *conflictResToStr(NiraAssetNameConflictResolution _conflictRes)
     return NULL;
 }
 
-NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const char *_assetName, const char *_assetType)
+#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+NiraStatus convertWideStringsToUtf8(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const wchar_t *_assetName, char **_assetNameOut)
+{
+    size_t strPoolBytesAvailable = 0;
+
+    for (size_t ff = 0; ff < _fileCount; ff++)
+    {
+        NiraAssetFile *assetFile = &_files[ff];
+
+        strPoolBytesAvailable += WideCharToMultiByte(CP_UTF8, 0, assetFile->pathW, -1, NULL, 0, NULL, NULL);
+        //fprintf(stderr, "For string for FILE %zd, pool is now %zd\n", ff, strPoolBytesAvailable);
+
+        if (assetFile->nameW)
+        {
+            strPoolBytesAvailable += WideCharToMultiByte(CP_UTF8, 0, assetFile->nameW, -1, NULL, 0, NULL, NULL);
+            //fprintf(stderr, "For string for NAME %zd, pool is now %zd\n", ff, strPoolBytesAvailable);
+        }
+    }
+
+    strPoolBytesAvailable += WideCharToMultiByte(CP_UTF8, 0, _assetName, -1, NULL, 0, NULL, NULL);
+    //fprintf(stderr, "For string for ASSET NAME, pool is now %zd\n", strPoolBytesAvailable);
+
+    _niraClient->stringPool = calloc(strPoolBytesAvailable, sizeof(char));
+
+    char *strPoolPtr = _niraClient->stringPool;
+
+    for (size_t ff = 0; ff < _fileCount; ff++)
+    {
+        NiraAssetFile *assetFile = &_files[ff];
+
+        {
+            size_t pathStrLen = WideCharToMultiByte(CP_UTF8, 0, assetFile->pathW, -1, strPoolPtr, strPoolBytesAvailable, NULL, NULL);
+            assetFile->path = strPoolPtr;
+            strPoolBytesAvailable -= pathStrLen;
+            strPoolPtr += pathStrLen;
+            //fprintf(stderr, "Converted string for FILE %zd, pool is now %zd, ptr is now %p, strPoolBytesAvailable is %zd, path string is %s\n", ff, strPoolBytesAvailable, strPoolPtr, strPoolBytesAvailable, assetFile->path);
+        }
+
+        if (assetFile->nameW)
+        {
+            size_t nameStrLen = WideCharToMultiByte(CP_UTF8, 0, assetFile->nameW, -1, strPoolPtr, strPoolBytesAvailable, NULL, NULL);
+            assetFile->name = strPoolPtr;
+            strPoolBytesAvailable -= nameStrLen;
+            strPoolPtr += nameStrLen;
+            //fprintf(stderr, "Converted string for NAME %zd, pool is now %zd, ptr is now %p, strPoolBytesAvailable is %zd, name string is %s\n", ff, strPoolBytesAvailable, strPoolPtr, strPoolBytesAvailable, assetFile->name);
+        }
+    }
+
+    {
+        size_t assetnameStrLen = WideCharToMultiByte(CP_UTF8, 0, _assetName, -1, strPoolPtr, strPoolBytesAvailable, NULL, NULL);
+        *_assetNameOut = strPoolPtr;
+        strPoolBytesAvailable -= assetnameStrLen;
+        strPoolPtr += assetnameStrLen;
+
+        //fprintf(stderr, "Converted string for ASSET NAME, pool is now %zd, ptr is now %p, strPoolBytesAvailable is %zd, asset name is %s\n", strPoolBytesAvailable, strPoolPtr, strPoolBytesAvailable, *_assetNameOut);
+    }
+
+    return NIRA_SUCCESS;
+}
+#endif
+
+#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const wchar_t *_assetName, NiraAssetType _assetType)
+#else
+NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const char *_assetName, NiraAssetType _assetType)
+#endif
 {
     if (!isValidNiraClient(_niraClient))
     {
         return NIRA_ERROR_INVALID_NIRACLIENT;
     }
+
+#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+    char *assetName;
+    convertWideStringsToUtf8(_niraClient, _files, _fileCount, _assetName, /*out*/ &assetName);
+#else
+    const char *assetName = _assetName;
+#endif
 
     if (NIRA_SUCCESS != niraInitCurlHandles(_niraClient))
     {
@@ -1070,6 +1152,27 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
     _niraClient->totalFileSize = 0;
     _niraClient->totalFileCount = _fileCount;
+
+    const char *assetType;
+    switch (_assetType)
+    {
+        case NIRA_ASSET_TYPE_PBR:
+            assetType = "default";
+            break;
+
+        case NIRA_ASSET_TYPE_SCULPT:
+            assetType = "sculpt";
+            break;
+
+        case NIRA_ASSET_TYPE_VOLUMETRIC_VIDEO:
+            assetType = "volumetric_video";
+            break;
+
+        case NIRA_ASSET_TYPE_PHOTOGRAMMETRY:
+        default:
+            assetType = "photogrammetry";
+            break;
+    }
 
     char jobUuidStr[40];
 
@@ -1091,9 +1194,9 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
         cJSON_AddStringToObject(jobCreationRequest, "status", "validating");
 
-        cJSON_AddStringToObject(jobCreationRequest, "assettype", _assetType);
+        cJSON_AddStringToObject(jobCreationRequest, "assettype", assetType);
         cJSON_AddStringToObject(jobCreationRequest, "batchId", jobUuidStr);
-        cJSON_AddStringToObject(jobCreationRequest, "assetname", _assetName);
+        cJSON_AddStringToObject(jobCreationRequest, "assetname", assetName);
 
         const char *nameConflictResolution = conflictResToStr(_niraClient->assetNameConflictResolution);
 
@@ -1170,7 +1273,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
     {
         NiraAssetFile *assetFile = &_files[ff];
 
-        NiraStatus status = getFileHashAndSize(_niraClient, assetFile->path, /*out*/ assetFile->hashStr, /*out*/ &assetFile->size);
+        NiraStatus status = getFileHashAndSize(_niraClient, assetFile);
         if (NIRA_SUCCESS != status)
         {
             return status;
@@ -1454,7 +1557,12 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
             {
                 // Sanity check -- did the file disappear?
                 {
+                    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+                    FILE *fh;
+                    _wfopen_s(&fh, assetFile->pathW, L"rb");
+                    #else
                     FILE *fh = fopen(assetFile->path, "rb");
+                    #endif
                     if (NULL == fh)
                     {
                         if (NiraSetError(_niraClient, NIRA_ERROR_FILE_CHANGED_DURING_UPLOAD))
@@ -1470,7 +1578,12 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
                 if (!NiraHasError(_niraClient))
                 {
                     size_t filesize;
+
+                    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+                    assetFile->mappedBuf = map_file(assetFile->pathW, /*out*/ &filesize);
+                    #else
                     assetFile->mappedBuf = map_file(assetFile->path, /*out*/ &filesize);
+                    #endif
 
                     if (NULL == assetFile->mappedBuf)
                     {
@@ -1784,6 +1897,11 @@ NiraStatus niraDeinit(NiraClient *_niraClient)
             }
             free(_niraClient->uploaders[tt]);
         }
+    }
+
+    if (NULL != _niraClient->stringPool)
+    {
+        free(_niraClient->stringPool);
     }
 
     free(_niraClient);

@@ -33,4 +33,4 @@ if ERRORLEVEL 1 (
 
 set CURL_ROOT=./vcpkg_installed/x64-windows-static-md
 
-cl.exe /MD /arch:AVX /openmp /O2 /DCURL_STATICLIB=1 /Oi /I%CURL_ROOT%/include /I. niraclient.c example_usage.c %CURL_ROOT%/lib/libcurl.lib %CURL_ROOT%/lib/zlib.lib ws2_32.lib wldap32.lib advapi32.lib kernel32.lib comdlg32.lib crypt32.lib normaliz.lib
+cl.exe /MD /arch:AVX /openmp /O2 /DCURL_STATICLIB=1 /Oi /I%CURL_ROOT%/include /D_NIRACLIENT_UTF16_PATHS_AND_NAMES /I. niraclient.c example_usage.c %CURL_ROOT%/lib/libcurl.lib %CURL_ROOT%/lib/zlib.lib ws2_32.lib wldap32.lib advapi32.lib kernel32.lib comdlg32.lib crypt32.lib normaliz.lib
