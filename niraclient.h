@@ -14,6 +14,14 @@
 #define NIRA_CURL_EXPECTED_VERSION 0x075600
 #define NIRA_CURL_EXPECTED_VERSION_STR "7.86.0"
 
+// We define _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES on Windows by default.
+// This is the best choice, since utf-8 really isn't well supported on Windows.
+#if defined(_WIN32) && !defined(_NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES)
+    #define _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES 1
+#else
+    #define _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES 0
+#endif
+
 #if defined(_MSC_VER)
 #ifndef _CRT_SECURE_NO_WARNINGS
     #define _CRT_SECURE_NO_WARNINGS
@@ -130,7 +138,7 @@ typedef struct _NiraAssetFile
     ////////////////////////
     // Public. The usage code can populate these:
     //
-    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+    #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
     wchar_t *pathW; // A path to the file. It's probably best to use absolute paths, but if using relative directory, be sure the cwd of the process is correct and not altered during execution.
     NiraFileType type; // Specify NIRA_FILETYPE_TEXTURE, NIRA_FILETYPE_IMAGE, NIRA_FILETYPE_MATERIAL, etc.
     wchar_t *nameW; // The name of the file, including its extension. Optional. If NULL, `basename(path)` is used. The default is almost always the correct choice.
@@ -143,9 +151,9 @@ typedef struct _NiraAssetFile
     ////////////////////////
     // Private:
     //
-    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
-    // When _NIRACLIENT_UTF16_PATHS_AND_NAMES is defined, niraclient-c takes care of populating the path and name strings below with utf-8 encodings of the pathW and nameW strings above.
-    // If you're using _NIRACLIENT_UTF16_PATHS_AND_NAMES, please do not specify these path and name pointers from your application:
+    #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
+    // When _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES is defined, niraclient-c takes care of populating the path and name strings below with utf-8 encodings of the pathW and nameW strings above.
+    // If you're using _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES, please do not specify these path and name pointers from your application:
     char  *path; // A path to the file. It's probably best to use absolute paths, but if using relative directory, be sure the cwd of the process is correct and not altered during execution.
     char  *name; // The name of the file, including its extension. Optional. If NULL, `basename(path)` is used. The default is almost always the correct choice.
     #endif
@@ -267,11 +275,11 @@ extern NiraStatus niraAuthorize(NiraClient *_niraClient, int64_t _retryTimeSecon
 
 // Uploads the provided files (the array of `NiraAssetFile`s) to a new asset named `_assetName`.
 // This will make network requests, and is blocking.
-// On Windows, you can use the unicode variant of this function by defining the preprocessor flag _NIRACLIENT_UTF16_PATHS_AND_NAMES.
-// When _NIRACLIENT_UTF16_PATHS_AND_NAMES is defined, the function expects the array of NiraAssetFile structs to contain wchar_t strings
+// On Windows, you can use the unicode variant of this function by defining the preprocessor flag _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES.
+// When _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES is defined, the function expects the array of NiraAssetFile structs to contain wchar_t strings
 // for the path and name members, rather than char strings.
 // The _assetName parameter should also be a wchar_t *.
-#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+#if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
 extern NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const wchar_t *_assetName, NiraAssetType _assetType);
 #else
 extern NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const char *_assetName, NiraAssetType _assetType);

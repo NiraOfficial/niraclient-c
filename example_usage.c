@@ -18,12 +18,11 @@ int32_t main()
 
     // In your implementation, you can allow for specification of an asset name, and/or default
     // to using the "project name", if your application already has a concept of that.
-    // For testing and easy iteration during development, we just generate a random name, here.
-    // Note, if you're building on Windows you can define _NIRACLIENT_UTF16_PATHS_AND_NAMES and
-    // provide assetName as a wchar_t string.
-    // On non-Windows platforms where utf-8 is the norm, the _NIRACLIENT_UTF16_PATHS_AND_NAMES define
-    // should not be used and assetName should be a char string.
-    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+    // For testing and easy iteration during development, we just pass "Test Asset" here.
+    // Note, if you're building on Windows, you should pass assetName as a wchar_t * string, which
+    // allows for full unicode support.
+    // On non-Windows platforms where utf-8 is the norm, just pass a char *.
+    #ifdef _WIN32
     wchar_t *assetName = L"Test Asset";
     #else
     char *assetName = "Test Asset";
@@ -121,13 +120,11 @@ int32_t main()
     // Provide an array of NiraAssetFile struct instances that will be passed to niraUploadAsset() below.
     // This is a very basic example consisting of an obj, mtl, and png.
     // If you allocate from the heap, it's best to zero initialize this prior to populating it.
-    // Also note, if you're building on Windows you can define _NIRACLIENT_UTF16_PATHS_AND_NAMES and
-    // use wchar_t strings for the path and name members of the NiraAssetFile struct instances.
-    // The #if/#else below shows this usage.
-    // On non-Windows platforms where utf-8 is the norm, the _NIRACLIENT_UTF16_PATHS_AND_NAMES define
-    // should not be used.
+    // Also note, if you're building on Windows, you should pass wchar_t strings for the path and name members
+    // of the NiraAssetFile struct instances, which allows for full unicode support.
+    // On non-Windows platforms where utf-8 is the norm, just pass a char *.
     NiraAssetFile niraAssetFiles[] = {
-        #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+        #ifdef _WIN32
         {
             L"./assets/tpot.obj", // path: A path to the file. Note, it's probably best to use absolute paths, but if using relative directory, be sure the cwd of the process is correct.
             NIRA_FILETYPE_SCENE, // type: One of NIRA_FILETYPE_TEXTURE (for texture files), NIRA_FILETYPE_PHOTO (for source photos), NIRA_FILETYPE_SCENE (for .obj files), NIRA_FILETYPE_MATERIAL (for .mtl files), or NIRA_FILETYPE_AUTO (everything else).

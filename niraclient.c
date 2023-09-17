@@ -751,7 +751,7 @@ NiraStatus makePatchRequestJson(NiraClient *_niraClient, NiraService *_niraServi
 
 int32_t getFileHashAndSize(NiraClient *_niraClient, NiraAssetFile *_assetFile)
 {
-    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+    #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
     FILE *fh;
     _wfopen_s(&fh, _assetFile->pathW, L"rb");
     #else
@@ -768,7 +768,7 @@ int32_t getFileHashAndSize(NiraClient *_niraClient, NiraAssetFile *_assetFile)
     }
     fclose(fh);
 
-    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+    #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
     char *mappedFile = map_file(_assetFile->pathW, /*out*/ &_assetFile->size);
     #else
     char *mappedFile = map_file(_assetFile->path, /*out*/ &_assetFile->size);
@@ -1066,7 +1066,7 @@ const char *conflictResToStr(NiraAssetNameConflictResolution _conflictRes)
     return NULL;
 }
 
-#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+#if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
 NiraStatus convertWideStringsToUtf8(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const wchar_t *_assetName, char **_assetNameOut)
 {
     size_t strPoolBytesAvailable = 0;
@@ -1127,7 +1127,7 @@ NiraStatus convertWideStringsToUtf8(NiraClient *_niraClient, NiraAssetFile *_fil
 }
 #endif
 
-#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+#if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
 NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const wchar_t *_assetName, NiraAssetType _assetType)
 #else
 NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_t _fileCount, const char *_assetName, NiraAssetType _assetType)
@@ -1138,7 +1138,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         return NIRA_ERROR_INVALID_NIRACLIENT;
     }
 
-#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+#if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
     char *assetName;
     convertWideStringsToUtf8(_niraClient, _files, _fileCount, _assetName, /*out*/ &assetName);
 #else
@@ -1557,7 +1557,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
             {
                 // Sanity check -- did the file disappear?
                 {
-                    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+                    #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
                     FILE *fh;
                     _wfopen_s(&fh, assetFile->pathW, L"rb");
                     #else
@@ -1579,7 +1579,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
                 {
                     size_t filesize;
 
-                    #if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+                    #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
                     assetFile->mappedBuf = map_file(assetFile->pathW, /*out*/ &filesize);
                     #else
                     assetFile->mappedBuf = map_file(assetFile->path, /*out*/ &filesize);

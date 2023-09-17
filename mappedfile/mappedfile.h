@@ -35,7 +35,7 @@ extern "C" {
  * \param length pointer which the mapped length is written to.
  * \return the pointer to the mapping. On failure NULL is returned.
  */
-#if defined(_WIN32) && defined(_NIRACLIENT_UTF16_PATHS_AND_NAMES)
+#if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
 char *map_file(const wchar_t *path, size_t *length);
 #else
 char *map_file(const char *path, size_t *length);
