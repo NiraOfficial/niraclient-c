@@ -1383,7 +1383,8 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         }
 
         cJSON *fileStatusItem = cJSON_GetObjectItem(fileResp, "status");
-        assetFile->isAlreadyOnServer = fileStatusItem && (0 == strcmp(fileStatusItem->valuestring, "ready_for_processing"));
+        assetFile->isAlreadyOnServer = fileStatusItem
+            && ((0 == strcmp(fileStatusItem->valuestring, "ready_for_processing")) || (0 == strcmp(fileStatusItem->valuestring, "uploaded")));
         if (forceFileUploads) { assetFile->isAlreadyOnServer = 0; }
 
         if (assetFile->isAlreadyOnServer)
