@@ -1138,6 +1138,11 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         return NIRA_ERROR_INVALID_NIRACLIENT;
     }
 
+    if (NiraHasError(_niraClient))
+    {
+        return NiraGetError(_niraClient);
+    }
+
 #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
     char *assetName;
     convertWideStringsToUtf8(_niraClient, _files, _fileCount, _assetName, /*out*/ &assetName);
@@ -1949,11 +1954,47 @@ NiraStatus niraSetAppName(NiraClient *_niraClient, const char *_appName)
     return NIRA_SUCCESS;
 }
 
+// Clears all error statuses on the niraClient instance.
+// This is primarily for internal/debugging usage.
+// Please double check with us if you you think you may need to call this from your
+// production usage code.
+NiraStatus niraClearError(NiraClient *_niraClient)
+{
+    if (!isValidNiraClient(_niraClient))
+    {
+        return NIRA_ERROR_INVALID_NIRACLIENT;
+    }
+
+    _niraClient->statusCode = NIRA_SUCCESS;
+    _niraClient->errorMessage[0] = 0;
+    _niraClient->errorDetail[0] = 0;
+
+    return NIRA_SUCCESS;
+}
+
 NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys, int64_t _retryTimeSeconds)
 {
     if (!isValidNiraClient(_niraClient))
     {
         return NIRA_ERROR_INVALID_NIRACLIENT;
+    }
+
+    if (NiraGetError(_niraClient) == NIRA_ERROR_UNSUPPORTED_COORDINATE_SYSTEM)
+    {
+        // This allows for niraSetCoordsys to be called multiple times.
+        // For example, after a sequence of calls like this can still function:
+        //  niraSetCoordsys() // returns NIRA_ERROR_UNSUPPORTED_COORDINATE_SYSTEM
+        //  niraSetCoordsys() // returns NIRA_SUCCESS
+        //  niraUploadAsset() // Is able to succeed
+        // Without the niraClearError() call below, the niraUploadAsset call in the example above would
+        // immediately detect and return the existing failure status set by the first call to
+        // niraSetCoordsys().
+        niraClearError(_niraClient);
+    }
+
+    if (NiraHasError(_niraClient))
+    {
+        return NiraGetError(_niraClient);
     }
 
     char coordsysReqUrl[1024];

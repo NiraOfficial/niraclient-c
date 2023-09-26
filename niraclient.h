@@ -293,6 +293,12 @@ extern NiraStatus niraSetCoordsys(NiraClient *_niraClient, const char *_coordsys
 
 extern const char *niraGetClientVersion();
 
+// Clears all error statuses on the niraClient instance.
+// This is primarily for internal/debugging usage.
+// Please double check with us if you you think you may need to call this from your
+// production usage code.
+extern NiraStatus niraClearError(NiraClient *_niraClient);
+
 // niraAbort() attempts to immediately close all active sockets on the provided NiraClient,
 // and causes the current niraUploadAsset() call to return as soon as they
 // are closed. This will cause active file upload requests to be canceled midway through.
