@@ -2120,7 +2120,7 @@ const char *niraGetErrorDetail(NiraClient *_niraClient)
 
 const char *niraGetClientVersion()
 {
-    return "1cb77e57";
+    return "60d0f2c1";
 }
 
 /* vim: set sw=4 ts=4 expandtab: */
