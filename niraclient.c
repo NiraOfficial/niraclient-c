@@ -120,6 +120,11 @@ const size_t UPLOAD_CHUNK_SIZE = 1024 * 1024 * 20;
 const size_t UPLOAD_CHUNK_SIZE = 1024 * 1024 * 1;
 #endif
 
+inline size_t niraGetPartCount(size_t _totalSize)
+{
+    return (size_t) ((_totalSize + (UPLOAD_CHUNK_SIZE - 1)) / UPLOAD_CHUNK_SIZE);
+}
+
 const size_t NIRL_CURL_UPLOAD_MAX_READ_SIZE = 512 * 1024;
 static size_t niraRequestedUploadWriteBufferSize;
 
@@ -1483,7 +1488,9 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         if (assetFile->isAlreadyOnServer) { continue; }
 
         //fprintf(stderr, "got file status: %s\n", fileStatus->valuestring);
-        const size_t filePartCount = (uint32_t)((assetFile->size / UPLOAD_CHUNK_SIZE) + 1);
+
+        const size_t filePartCount = niraGetPartCount(assetFile->size);
+
         totalPartCount += filePartCount;
         assetFile->partsUploadedCount = 0;
     }
@@ -1513,7 +1520,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
             if (requiredFiletype == assetFile->type || requiredFiletype == NIRA_FILETYPE_AUTO)
             {
-                const size_t filePartCount = (uint32_t)((assetFile->size / UPLOAD_CHUNK_SIZE) + 1);
+                const size_t filePartCount = niraGetPartCount(assetFile->size);
 
                 fprintf(stderr, "FILE: %zd %s\n", ff, assetFile->path);
 
@@ -1552,7 +1559,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
         NiraAssetFile *assetFile = &_files[fileIdx];
 
-        const size_t filePartCount = (uint32_t)((assetFile->size / UPLOAD_CHUNK_SIZE) + 1);
+        const size_t filePartCount = niraGetPartCount(assetFile->size);
 
         const char *filename = assetFile->name ? assetFile->name : filenameExt(assetFile->path);
 
@@ -1770,7 +1777,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
         if (assetFile->isAlreadyOnServer) { continue; }
 
-        const size_t filePartCount = (uint32_t)((assetFile->size / UPLOAD_CHUNK_SIZE) + 1);
+        const size_t filePartCount = niraGetPartCount(assetFile->size);
 
         if (assetFile->partsUploadedCount != filePartCount)
         {
