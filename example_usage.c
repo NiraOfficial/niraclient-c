@@ -28,13 +28,31 @@ int32_t main()
     char *assetName = "Test Asset";
     #endif
 
+    // niraHostname: Pass the actual org name that the user provides in your UI.
+    const char *niraHostname = "uploadtest.nira.app";
+
+    // userAgentString: User agent string included in all server requests. It's important to use the name of your application here, and a version number is also perferred.
+    const char *userAgentString = "Your application v1.2.3";
+
+    // appName: It's very important to set this! Reach out to Nira for the correct string value to use here:
+    const char *appName = NULL;
+
+    // These environment variable overrides are only for utility/debugging purposes.
+    // You don't need to include this in your code.
+    if (getenv("NIRA_HOSTNAME"))          { niraHostname    = getenv("NIRA_HOSTNAME");          }
+    if (getenv("NIRA_USER_AGENT_STRING")) { userAgentString = getenv("NIRA_USER_AGENT_STRING"); }
+    if (getenv("NIRA_APPNAME"))           { appName         = getenv("NIRA_APPNAME");           }
+
     NiraClient *niraClient = niraInit(
-              "uploadtest.nira.app"     // Pass the actual org name that the user provides
-            , "Your application v1.2.3" // User agent string included in all server requests. It's important to use the name of your application here, and a version number is also perferred.
+              niraHostname
+            , userAgentString
             );
 
-    // This is an important call - Reach out to Nira for the correct string value to use here.
-    //niraSetAppName(niraClient, "ask_nira_support_about_this_value!");
+    if (appName)
+    {
+        // This is a very important call! Reach out to Nira for the correct string value to use here:
+        niraSetAppName(niraClient, appName);
+    }
 
     char *appKeyId     = getenv("APP_KEY_ID_UPLOADTEST");
     char *appKeySecret = getenv("APP_KEY_SECRET_UPLOADTEST");
