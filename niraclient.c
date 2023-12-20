@@ -1661,7 +1661,12 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
         size_t partoffset = (partIdx * UPLOAD_CHUNK_SIZE);
         char *filePartPtr = &assetFile->mappedBuf[partoffset];
-        size_t filePartSize = (partIdx < (filePartCount - 1)) ? UPLOAD_CHUNK_SIZE : (assetFile->size % UPLOAD_CHUNK_SIZE);
+
+        uint8_t fileIsEvenlyDivisibleByChunkSize = ((assetFile->size % UPLOAD_CHUNK_SIZE) == 0);
+        uint8_t isFinalChunk = (partIdx == (filePartCount - 1));
+
+        size_t finalChunkSize = fileIsEvenlyDivisibleByChunkSize ? UPLOAD_CHUNK_SIZE : (assetFile->size % UPLOAD_CHUNK_SIZE);
+        size_t filePartSize = isFinalChunk ? finalChunkSize : UPLOAD_CHUNK_SIZE;
 
         if ((filePartPtr + filePartSize) > (assetFile->mappedBuf + assetFile->size))
         {
