@@ -1,4 +1,4 @@
-#include "niraclient.h"
+﻿#include "niraclient.h"
 #include <stdlib.h> // Used for getenv()
 
 int printUploadProgress(void *_nc);
@@ -149,7 +149,7 @@ int32_t main()
             NULL,                // name: The name of the file, including its extension. Optional. If NULL, basename(path) is automatically used ("tpot.obj", in this case)
         },
         { L"./assets/tpot.mtl", NIRA_FILETYPE_MATERIAL },
-        { L"./assets/blue.png", NIRA_FILETYPE_TEXTURE },
+        { L"./assets/utftest-ä-天-dir/blue.png", NIRA_FILETYPE_TEXTURE },
         #else
         {
             "./assets/tpot.obj", // path: A path to the file. Note, it's probably best to use absolute paths, but if using relative directory, be sure the cwd of the process is correct.
@@ -157,7 +157,7 @@ int32_t main()
             NULL,                // name: The name of the file, including its extension. Optional. If NULL, basename(path) is automatically used ("tpot.obj", in this case)
         },
         { "./assets/tpot.mtl", NIRA_FILETYPE_MATERIAL },
-        { "./assets/blue.png", NIRA_FILETYPE_TEXTURE },
+        { "./assets/utftest-ä-天-dir/blue.png", NIRA_FILETYPE_TEXTURE },
         #endif
     };
 
