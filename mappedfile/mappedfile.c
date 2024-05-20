@@ -65,14 +65,16 @@ char *map_file(const char *path, size_t *length)
 	if (hFile == INVALID_HANDLE_VALUE)
 		return NULL;
 
-	size = GetFileSize(hFile, NULL);
-	if (size == INVALID_FILE_SIZE || size == 0)
+	if (!GetFileSizeEx(hFile, &size))
+		goto fail;
+
+	if (size == 0)
 		goto fail;
 
 #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
-	hMap = CreateFileMappingW(hFile, NULL, PAGE_READONLY, 0, size, NULL);
+	hMap = CreateFileMappingW(hFile, NULL, PAGE_READONLY, (DWORD) (size >> 32), (DWORD) size, NULL);
 #else
-	hMap = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, size, NULL);
+	hMap = CreateFileMappingA(hFile, NULL, PAGE_READONLY, (DWORD) (size >> 32), (DWORD) size, NULL);
 #endif
 	if (!hMap)
 		goto fail;
