@@ -1,3 +1,9 @@
+#if defined(NIRACLIENT_USE_INCLUDED_ZSTD_C)
+  #include "./zstd/zstd.c"
+#else
+  #include <zstd.h>
+#endif
+
 #include "niraclient.h"
 
 #include "meowhash/meow_hash_x64_aesni.h"
@@ -5,20 +11,18 @@
 #include <curl/curl.h>
 
 #if LIBCURL_VERSION_NUM > NIRA_CURL_EXPECTED_VERSION
-#define NIRA_CURL_VERSION_MESSAGE "This version of niraclient was tested with libcurl version " NIRA_CURL_EXPECTED_VERSION_STR ", and you have version " LIBCURL_VERSION ". Use this version at your own risk!"
+#define NIRA_CURL_VERSION_MESSAGE "This version of niraclient was tested up to libcurl version " NIRA_CURL_EXPECTED_VERSION_STR ", and you have version " LIBCURL_VERSION ". Use this version at your own risk!"
 #pragma message(NIRA_CURL_VERSION_MESSAGE)
 #endif
 
 #include "cjson/cJSON.h"
 #include "cjson/cJSON.c"
 
-#include "miniz/miniz.h"
-#include "miniz/miniz.c"
-
 #include "mappedfile/mappedfile.c"
 
 #include <errno.h>
 #include <time.h>
+#include <assert.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -70,7 +74,7 @@ static int thrd_sleep(const struct timespec *time_point, struct timespec *remain
 #endif
 
 // Not for optimization, it's just nicer than bringing in libmath
-inline float fsqrt(const float f)
+static float niraclient_fsqrt(const float f)
 {
     __m128 temp = _mm_set_ss(f);
     temp = _mm_sqrt_ss(temp);
@@ -118,7 +122,7 @@ const size_t UPLOAD_CHUNK_SIZE = 1024 * 1024 * 20;
 const size_t UPLOAD_CHUNK_SIZE = 1024 * 1024 * 1;
 #endif
 
-inline size_t niraGetPartCount(size_t _totalSize)
+static size_t niraGetPartCount(size_t _totalSize)
 {
     return (size_t) ((_totalSize + (UPLOAD_CHUNK_SIZE - 1)) / UPLOAD_CHUNK_SIZE);
 }
@@ -332,17 +336,22 @@ struct nirl_curl_mimestream {
     const char *buffer;
     curl_off_t size;
     curl_off_t position;
-    z_stream zstream;
+    ZSTD_CCtx* zstdStream;
     size_t compressedSize;
     uint32_t useCompression;
+    uint8_t zstdStreamIsFinished;
 };
 
 size_t nirl_mime_read_callback(char *writeBuffer, size_t size, size_t nitems, void *arg)
 {
     struct nirl_curl_mimestream *p = (struct nirl_curl_mimestream *) arg;
 
-    size_t bytesRemainingInFile = p->size - p->position;
+    if (p->zstdStreamIsFinished)
+    {
+        return 0;
+    }
 
+    size_t bytesRemainingInFile = p->size - p->position;
     size_t maxBytesToWrite = nitems * size;
 
     if (0 == p->useCompression)
@@ -365,56 +374,61 @@ size_t nirl_mime_read_callback(char *writeBuffer, size_t size, size_t nitems, vo
 
         return maxBytesToWrite;
     }
-
-    //fprintf(stderr, "read called %s %zd read buffer:%zd\n", p->filename, size * nitems, NIRL_CURL_UPLOAD_MAX_READ_SIZE);
-
-    size_t maxBytesToRead = NIRL_CURL_UPLOAD_MAX_READ_SIZE;
-
-    //if (maxBytesToWrite > niraRequestedUploadWriteBufferSize)
-    //{
-    //    fprintf(stderr, "Curl write buffer (%zd) smaller than requested (requested size: %zd) [This is not an error]\n", maxBytesToWrite, niraRequestedUploadWriteBufferSize);
-    //}
-
-    if (maxBytesToRead > bytesRemainingInFile)
+    else
     {
-        maxBytesToRead = bytesRemainingInFile;
-    }
+        //fprintf(stderr, "read called %s %zd read buffer:%zd\n", p->filename, size * nitems, NIRL_CURL_UPLOAD_MAX_READ_SIZE);
 
-    p->zstream.next_in = (const unsigned char *)(p->buffer + p->position);
-    p->zstream.avail_in = maxBytesToRead;
+        size_t maxBytesToRead = NIRL_CURL_UPLOAD_MAX_READ_SIZE;
 
-    p->zstream.next_out = (unsigned char *)writeBuffer;
-    p->zstream.avail_out = maxBytesToWrite;
+        //if (maxBytesToWrite > niraRequestedUploadWriteBufferSize)
+        //{
+        //    fprintf(stderr, "Curl write buffer (%zd) smaller than requested (requested size: %zd) [This is not an error]\n", maxBytesToWrite, niraRequestedUploadWriteBufferSize);
+        //}
 
-    int32_t zstatus = deflate(&p->zstream, (bytesRemainingInFile == maxBytesToRead) ? Z_FINISH : Z_SYNC_FLUSH);
-
-    if (Z_OK != zstatus && Z_STREAM_END != zstatus)
-    {
-        if (NiraSetError(p->niraClient, NIRA_ERROR_COMPRESSION_FAILURE))
+        if (maxBytesToRead > bytesRemainingInFile)
         {
-            NIRA_SET_ERR_DETAIL(p->niraClient, "deflate() error: %s %d", mz_error(zstatus), zstatus);
-            NIRA_SET_ERR_MSG(p->niraClient, "Compression error while uploading %s", p->filename);
+            maxBytesToRead = bytesRemainingInFile;
         }
 
-        return CURL_READFUNC_ABORT;
+        ZSTD_inBuffer in = { p->buffer + p->position, maxBytesToRead, 0 };
+        ZSTD_outBuffer out = { writeBuffer, maxBytesToWrite, 0 };
+
+        ZSTD_EndDirective flushType = (bytesRemainingInFile == maxBytesToRead) ? ZSTD_e_end : ZSTD_e_continue;
+
+        size_t zstatus;
+
+        do
+        {
+            zstatus = ZSTD_compressStream2(p->zstdStream, &out, &in, flushType);
+
+            if (ZSTD_isError(zstatus))
+            {
+                if (NiraSetError(p->niraClient, NIRA_ERROR_COMPRESSION_FAILURE))
+                {
+                    NIRA_SET_ERR_DETAIL(p->niraClient, "zstd() error: %s %zu", ZSTD_getErrorName(zstatus), zstatus);
+                    NIRA_SET_ERR_MSG(p->niraClient, "Compression error while uploading %s", p->filename);
+                }
+
+                return CURL_READFUNC_ABORT;
+            }
+        } while (out.pos == 0 && zstatus > 0);
+
+        p->position += in.pos;
+        atomic_fetch_add_64(&p->niraClient->totalBytesCompleted, in.pos);
+
+        size_t bytesWritten = out.pos;
+        p->compressedSize += bytesWritten;
+
+        //fprintf(stderr, "writing %s %zd bytes\n", p->filename, bytesWritten);
+
+        if (flushType == ZSTD_e_end && in.pos == in.size && zstatus == 0)
+        {
+            // Ensures that we return 0 the next time we're called by curl, which will signal curl to end this streaming request.
+            p->zstdStreamIsFinished = 1;
+        }
+
+        return bytesWritten;
     }
-
-    p->position += (maxBytesToRead - p->zstream.avail_in);
-
-    atomic_fetch_add_64(&p->niraClient->totalBytesCompleted, (maxBytesToRead - p->zstream.avail_in));
-
-    //if (0 == p->zstream.avail_out)
-    //{
-    //    fprintf(stderr, "Ran out of space in output buffer (This is not an error)\n");
-    //}
-
-    size_t bytesWritten = maxBytesToWrite - p->zstream.avail_out;
-
-    p->compressedSize += bytesWritten;
-
-    //fprintf(stderr, "writing %s %zd bytes\n", p->filename, bytesWritten);
-
-    return bytesWritten;
 }
 
 int nirl_mime_seek_callback(void *arg, curl_off_t offset, int origin)
@@ -428,13 +442,9 @@ int nirl_mime_seek_callback(void *arg, curl_off_t offset, int origin)
     if (SEEK_SET == origin && 0 == offset)
     {
         p->position = 0;
+        p->zstdStreamIsFinished = 0;
 
-        p->zstream.next_in = NULL;
-        p->zstream.avail_in = 0;
-        p->zstream.next_out = NULL;
-        p->zstream.avail_out = 0;
-
-        deflateReset(&p->zstream);
+        ZSTD_CCtx_reset(p->zstdStream, ZSTD_reset_session_only);
 
         return CURL_SEEKFUNC_OK;
     }
@@ -442,9 +452,9 @@ int nirl_mime_seek_callback(void *arg, curl_off_t offset, int origin)
     return CURL_SEEKFUNC_FAIL;
 }
 
-NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_niraService, uint8_t _doAutoAuthTokenRefresh, int64_t _retryTimeSeconds)
+static NiraStatus performRequestWithRetries(NiraClient *_niraClient, NiraService *_niraService, uint8_t _doAutoAuthTokenRefresh, int64_t _retryTimeSeconds)
 {
-    const int64_t retries = (int64_t)(fsqrt((float)_retryTimeSeconds * NIRA_REQUEST_RETRY_BACKOFF_FACTOR * 2) / NIRA_REQUEST_RETRY_BACKOFF_FACTOR) + 1;
+    const int64_t retries = (int64_t)(niraclient_fsqrt((float)_retryTimeSeconds * NIRA_REQUEST_RETRY_BACKOFF_FACTOR * 2) / NIRA_REQUEST_RETRY_BACKOFF_FACTOR) + 1;
     //fprintf(stderr, "total retry time target: %d, backoff:%d, num retries: %zd\n", _retryTimeSeconds, NIRA_REQUEST_RETRY_BACKOFF_FACTOR, retries);
 
     char *url;
@@ -580,7 +590,7 @@ NiraStatus makeFileUploadPartRequest(NiraClient *_niraClient, NiraService *_nira
 
     if (0 == niraRequestedUploadWriteBufferSize)
     {
-        niraRequestedUploadWriteBufferSize = deflateBound(NULL, NIRL_CURL_UPLOAD_MAX_READ_SIZE) + (10*1024);
+        niraRequestedUploadWriteBufferSize = ZSTD_compressBound(NIRL_CURL_UPLOAD_MAX_READ_SIZE) + (10*1024);
     }
 
     //fprintf(stderr, "NIRL_CURL_UPLOAD_MAX_READ_SIZE: %zd niraRequestedUploadWriteBufferSize: %zd\n", NIRL_CURL_UPLOAD_MAX_READ_SIZE, niraRequestedUploadWriteBufferSize);
@@ -614,12 +624,13 @@ NiraStatus makeFileUploadPartRequest(NiraClient *_niraClient, NiraService *_nira
         curlMimeStream.size = _filePartSize;
         curlMimeStream.position = 0;
         curlMimeStream.useCompression = _niraClient->useCompression;
-        deflateInit(&curlMimeStream.zstream, MZ_BEST_SPEED);
+        curlMimeStream.zstdStreamIsFinished = 0;
+        curlMimeStream.zstdStream = ZSTD_createCCtx();
+        ZSTD_CCtx_setParameter(curlMimeStream.zstdStream, ZSTD_c_compressionLevel, 1); // Prioritize compression speed.
+        ZSTD_CCtx_setParameter(curlMimeStream.zstdStream, ZSTD_c_checksumFlag, 1);
 
-        // Since deflate can sometimes produce data larger than the source,
-        // we often want to provide a size larger than the file part, here.
-        // Passing -1 here ensures that libcurl keeps calling our curl_mime_data_cb even
-        // if we've written out more bytes than the size of the file part.
+        // Passing -1 here engages chunked transfer mode, which is what we want since we don't
+        // know the size if we're compressing the file on the fly.
         // curl_mime_data_cb can indicate that it's finished by returning 0.
         curl_mime_data_cb(filePart, -1, nirl_mime_read_callback, nirl_mime_seek_callback, NULL, &curlMimeStream);
         curl_mime_name(filePart, "data");
@@ -633,7 +644,7 @@ NiraStatus makeFileUploadPartRequest(NiraClient *_niraClient, NiraService *_nira
 
     NiraStatus reqStatus = performRequestWithRetries(_niraClient, _niraService, true, NIRA_INTERNAL_REQUEST_RETRY_TIME_TOTAL);
 
-    deflateEnd(&curlMimeStream.zstream);
+    ZSTD_freeCCtx(curlMimeStream.zstdStream);
 
     atomic_fetch_add_64(&_assetFile->compressedBytesUploaded, curlMimeStream.compressedSize);
 
@@ -1679,7 +1690,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         cJSON_AddNumberToObject(fileUploadPartRequestBody, "partbyteoffset", (double)partoffset);
         if (_niraClient->useCompression)
         {
-            cJSON_AddStringToObject(fileUploadPartRequestBody, "compression", "deflate");
+            cJSON_AddStringToObject(fileUploadPartRequestBody, "compression", "zstd");
         }
 
 #ifdef _OPENMP
@@ -1855,9 +1866,9 @@ NiraClient *niraInit(const char *_orgName, const char *_userAgent)
 
         curl_version_info_data *curlVersionInfo = curl_version_info(CURLVERSION_NOW);
 
-        if (NIRA_CURL_EXPECTED_VERSION != curlVersionInfo->version_num)
+        if (curlVersionInfo->version_num > NIRA_CURL_EXPECTED_VERSION)
         {
-            fprintf(stderr, "This version of niraclient was tested with libcurl version " NIRA_CURL_EXPECTED_VERSION_STR " (statically linked), and you have version %s. Use this version at your own risk!\n", curlVersionInfo->version);
+            fprintf(stderr, "This version of niraclient was tested up to libcurl version " NIRA_CURL_EXPECTED_VERSION_STR ", and you have version %s. Use this version at your own risk!\n", curlVersionInfo->version);
         }
     }
 

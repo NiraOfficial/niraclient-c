@@ -11,7 +11,7 @@
 
 // Note, we've tested niraclient with libcurl version 8.18.0, so that is what we recommend.
 // Other versions may work fine.
-#define NIRA_CURL_EXPECTED_VERSION 0x081800
+#define NIRA_CURL_EXPECTED_VERSION 0x081200
 #define NIRA_CURL_EXPECTED_VERSION_STR "8.18.0"
 
 // We define _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES on Windows by default.
