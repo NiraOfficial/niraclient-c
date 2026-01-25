@@ -4,11 +4,9 @@
 
 #include <curl/curl.h>
 
-#if LIBCURL_VERSION_NUM != NIRA_CURL_EXPECTED_VERSION
-#define NIRA_CURL_VERSION_MESSAGE "This version of niraclient was tested with libcurl version " NIRA_CURL_EXPECTED_VERSION_STR " (statically linked), and you have version " LIBCURL_VERSION ". Use this version at your own risk!"
+#if LIBCURL_VERSION_NUM > NIRA_CURL_EXPECTED_VERSION
+#define NIRA_CURL_VERSION_MESSAGE "This version of niraclient was tested with libcurl version " NIRA_CURL_EXPECTED_VERSION_STR ", and you have version " LIBCURL_VERSION ". Use this version at your own risk!"
 #pragma message(NIRA_CURL_VERSION_MESSAGE)
-#elif !defined(CURL_STATICLIB)
-#pragma message("Warning: niraclient-c has been tested with a static build of libcurl. Use a dynamically loaded libcurl at your own risk.")
 #endif
 
 #include "cjson/cJSON.h"
@@ -345,16 +343,15 @@ size_t nirl_mime_read_callback(char *writeBuffer, size_t size, size_t nitems, vo
 
     size_t bytesRemainingInFile = p->size - p->position;
 
-    if (bytesRemainingInFile == 0)
-    {
-        //fprintf(stderr, "finishing file %s\n", p->filename);
-        return 0;
-    }
-
     size_t maxBytesToWrite = nitems * size;
 
     if (0 == p->useCompression)
     {
+        if (bytesRemainingInFile == 0)
+        {
+            return 0;
+        }
+
         if (maxBytesToWrite > bytesRemainingInFile)
         {
             maxBytesToWrite = bytesRemainingInFile;
@@ -568,8 +565,6 @@ NiraStatus makeFileUploadPartRequest(NiraClient *_niraClient, NiraService *_nira
     struct curl_slist uploadRequestHeaders[] = {
       { _niraClient->orgHeader       , &uploadRequestHeaders[1] },
       { _niraClient->userAgentHeader , &uploadRequestHeaders[2] },
-      { "Transfer-Encoding: chunked" , &uploadRequestHeaders[3] }, // We don't know the size due to streaming compression, so this is required
-      { "Content-Length:"            , &uploadRequestHeaders[4] }, // We don't know the size due to streaming compression, so this is required
       { _niraClient->apiTokenHeader  , NULL                     },
     };
 
@@ -622,16 +617,11 @@ NiraStatus makeFileUploadPartRequest(NiraClient *_niraClient, NiraService *_nira
         deflateInit(&curlMimeStream.zstream, MZ_BEST_SPEED);
 
         // Since deflate can sometimes produce data larger than the source,
-        // we actually want to provide a size larger than the file part, here.
-        // This ensures that libcurl keeps calling our curl_mime_data_cb even
+        // we often want to provide a size larger than the file part, here.
+        // Passing -1 here ensures that libcurl keeps calling our curl_mime_data_cb even
         // if we've written out more bytes than the size of the file part.
-        // In other words, we want to disable libcurl's behavior of
-        // ceasing its calls to our curl_mime_data_cb function when bytesWritten == partsize.
-        //
-        // Note, curl_mime_data_cb can indicate that it's finished by returning 0.
-        size_t sizeThatIsPuproselyLargerThanFilePart = deflateBound(NULL, _filePartSize) * 2;
-
-        curl_mime_data_cb(filePart, sizeThatIsPuproselyLargerThanFilePart, nirl_mime_read_callback, nirl_mime_seek_callback, NULL, &curlMimeStream);
+        // curl_mime_data_cb can indicate that it's finished by returning 0.
+        curl_mime_data_cb(filePart, -1, nirl_mime_read_callback, nirl_mime_seek_callback, NULL, &curlMimeStream);
         curl_mime_name(filePart, "data");
         curl_mime_filename(filePart, _filename);
     }

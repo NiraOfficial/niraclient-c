@@ -9,10 +9,10 @@
 #pragma message( "openmp is recommended for best upload performance, and required if you need thread safety. Compile using '-fopenmp' with clang/gcc and '/openmp' with MSVC")
 #endif
 
-// Note, we've tested niraclient with libcurl version 7.86.0 (statically linked), so that is what we recommend.
+// Note, we've tested niraclient with libcurl version 8.18.0, so that is what we recommend.
 // Other versions may work fine.
-#define NIRA_CURL_EXPECTED_VERSION 0x075600
-#define NIRA_CURL_EXPECTED_VERSION_STR "7.86.0"
+#define NIRA_CURL_EXPECTED_VERSION 0x081800
+#define NIRA_CURL_EXPECTED_VERSION_STR "8.18.0"
 
 // We define _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES on Windows by default.
 // This is the best choice, since utf-8 really isn't well supported on Windows.
