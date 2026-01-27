@@ -754,6 +754,30 @@ NiraStatus makePatchRequestJson(NiraClient *_niraClient, NiraService *_niraServi
     return NIRA_SUCCESS;
 }
 
+int32_t getFileSize(NiraClient *_niraClient, NiraAssetFile *_assetFile)
+{
+    #if _NIRACLIENT_WIN32_WCHAR_PATHS_AND_NAMES
+    FILE *fh;
+    _wfopen_s(&fh, _assetFile->pathW, L"rb");
+    #else
+    FILE *fh = fopen(_assetFile->path, "rb");
+    #endif
+    if (NULL == fh)
+    {
+        if (NiraSetError(_niraClient, NIRA_ERROR_FILE_IO))
+        {
+            NIRA_SET_ERR_DETAIL(_niraClient, "fopen: %s (%d)", strerror(errno), errno);
+            NIRA_SET_ERR_MSG(_niraClient, "File does not exist or it's not readable: %s", _assetFile->path);
+        }
+        return NiraGetError(_niraClient);
+    }
+
+    fseek(fh, 0L, SEEK_END);
+    _assetFile->size = ftell(fh);
+    fclose(fh);
+
+    return 0;
+}
 
 int32_t getFileHashAndSize(NiraClient *_niraClient, NiraAssetFile *_assetFile)
 {
@@ -803,7 +827,7 @@ int32_t getFileHashAndSize(NiraClient *_niraClient, NiraAssetFile *_assetFile)
 
     unmap_file(mappedFile, _assetFile->size);
 
-    //fprintf(stdout, "GOT HASH for %s: %s\n", _filepath, _uuidStr);
+    //fprintf(stdout, "GOT HASH for %s: %s\n", _assetFile->path, _assetFile->hashStr);
 
     return 0;
 }
@@ -1279,12 +1303,13 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
 
     size_t totalFileSize = 0;
 
-    // Get hashes and sizes of all files
+    // Get sizes of all files
     for (size_t ff = 0; ff < _fileCount; ff++)
     {
         NiraAssetFile *assetFile = &_files[ff];
+        assetFile->hashStr[0] = 0;
 
-        NiraStatus status = getFileHashAndSize(_niraClient, assetFile);
+        NiraStatus status = getFileSize(_niraClient, assetFile);
         if (NIRA_SUCCESS != status)
         {
             return status;
@@ -1363,7 +1388,7 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
         }
 
         cJSON_AddStringToObject(fileRequestBody, "uuid", assetFile->uuidStr);
-        cJSON_AddStringToObject(fileRequestBody, "meowhash", assetFile->hashStr);
+        cJSON_AddStringToObject(fileRequestBody, "status", "uploading");
         cJSON_AddNumberToObject(fileRequestBody, "filesize", (double)assetFile->size);
 
         cJSON_AddNumberToObject(fileRequestBody, "jobId", jobId);
@@ -1391,6 +1416,58 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
                 NIRA_SET_ERR_MSG(_niraClient, "Could not parse file creation response");
             }
             continue;
+        }
+
+        cJSON *shouldValidateItem = cJSON_GetObjectItem(fileResp, "shouldValidate");
+        if (shouldValidateItem && shouldValidateItem->valueint)
+        {
+            // Server might already have this file, hash it to be sure.
+            cJSON *fileIdItem = cJSON_GetObjectItem(fileResp, "id");
+            if (!fileIdItem)
+            {
+                if (NiraSetError(_niraClient, NIRA_ERROR_JSON_MISSING_ATTRIBUTE))
+                {
+                    NIRA_SET_ERR_DETAIL(_niraClient, "Response: %.*s", 128, _niraClient->uploaders[threadIdx]->responseBuf);
+                    NIRA_SET_ERR_MSG(_niraClient, "Missing id in upload file creation response");
+                }
+                continue;
+            }
+            uint32_t fileId = fileIdItem->valueint;
+            cJSON_Delete(fileResp);
+
+            NiraStatus hashStatus = getFileHashAndSize(_niraClient, assetFile);
+            if (NIRA_SUCCESS != hashStatus)
+            {
+                continue;
+            }
+
+            cJSON *updateFileRequest = cJSON_CreateObject();
+
+            cJSON_AddStringToObject(updateFileRequest, "status", "uploading");
+            cJSON_AddStringToObject(updateFileRequest, "meowhash", assetFile->hashStr);
+
+            char filePatchEndpoint[1024];
+            snprintf(filePatchEndpoint, sizeof(filePatchEndpoint), "%s/%d", _niraClient->filesEndpoint, fileId);
+
+            NiraStatus updateFileReqStatus = makePatchRequestJson(_niraClient, _niraClient->uploaders[threadIdx], filePatchEndpoint, updateFileRequest);
+            cJSON_Delete(updateFileRequest);
+
+            if (NIRA_SUCCESS != updateFileReqStatus)
+            {
+                continue;
+            }
+
+            fileResp = cJSON_Parse(_niraClient->uploaders[threadIdx]->responseBuf);
+
+            if (!fileResp)
+            {
+                if (NiraSetError(_niraClient, NIRA_ERROR_JSON_PARSE))
+                {
+                    NIRA_SET_ERR_DETAIL(_niraClient, "Response: %.*s", 128, _niraClient->uploaders[threadIdx]->responseBuf);
+                    NIRA_SET_ERR_MSG(_niraClient, "Could not parse file update response");
+                }
+                continue;
+            }
         }
 
         cJSON *fileStatusItem = cJSON_GetObjectItem(fileResp, "status");
@@ -1735,7 +1812,11 @@ NiraStatus niraUploadAsset(NiraClient *_niraClient, NiraAssetFile *_files, size_
             cJSON_AddStringToObject(fileUploadDoneRequestBody, "uuid", assetFile->uuidStr);
             cJSON_AddNumberToObject(fileUploadDoneRequestBody, "totalfilesize", (double)assetFile->size);
             cJSON_AddNumberToObject(fileUploadDoneRequestBody, "filePartCount", filePartCount);
-            cJSON_AddStringToObject(fileUploadDoneRequestBody, "meowhash", assetFile->hashStr);
+
+            if (assetFile->hashStr[0])
+            {
+                cJSON_AddStringToObject(fileUploadDoneRequestBody, "meowhash", assetFile->hashStr);
+            }
 
             char fileUploadDoneEndpoint[512];
             snprintf(fileUploadDoneEndpoint, sizeof(fileUploadDoneEndpoint), "https://%s/file-upload-done", uploadServiceHost);
