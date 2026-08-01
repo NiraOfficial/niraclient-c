@@ -67,6 +67,6 @@ cl.exe /MD /arch:AVX /openmp /O2 /Oi ^
     "%VCPKG_PATH%\lib\libcurl.lib" ^
     "%ZLIB_LIB%" ^
     ws2_32.lib advapi32.lib crypt32.lib wldap32.lib normaliz.lib ^
-    iphlpapi.lib secur32.lib
+    iphlpapi.lib secur32.lib bcrypt.lib
 
 endlocal
