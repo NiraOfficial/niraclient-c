@@ -50,13 +50,20 @@ if "%TRIPLET%"=="" set "TRIPLET=x64-windows-static-md"
 
 set VCPKG_PATH=.\vcpkg_installed\%TRIPLET%
 
+set "ZLIB_LIB=%VCPKG_PATH%\lib\zlib.lib"
+if not exist "%ZLIB_LIB%" set "ZLIB_LIB=%VCPKG_PATH%\lib\zlibstatic.lib"
+if not exist "%ZLIB_LIB%" (
+    echo ERROR: Could not find zlib.lib or zlibstatic.lib in %VCPKG_PATH%\lib
+    exit /b 1
+)
+
 cl.exe /MD /arch:AVX /openmp /O2 /Oi ^
     /DCURL_STATICLIB ^
     /DNIRACLIENT_USE_INCLUDED_ZSTD_C ^
     /I"%VCPKG_PATH%\include" /I. ^
     niraclient.c example_usage.c ^
     "%VCPKG_PATH%\lib\libcurl.lib" ^
-    "%VCPKG_PATH%\lib\zlib.lib" ^
+    "%ZLIB_LIB%" ^
     ws2_32.lib advapi32.lib crypt32.lib wldap32.lib normaliz.lib ^
     iphlpapi.lib secur32.lib
 
