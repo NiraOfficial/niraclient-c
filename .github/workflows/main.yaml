@@ -40,7 +40,11 @@ jobs:
           APP_KEY_ID_UPLOADTEST: ${{ secrets.APP_KEY_ID_UPLOADTEST }}
           APP_KEY_SECRET_UPLOADTEST: ${{ secrets.APP_KEY_SECRET_UPLOADTEST }}
         run: |
-          niraclient.exe
+          niraclient.exe > test_output.txt 2>&1
+          set TEST_EXITCODE=%ERRORLEVEL%
+          type test_output.txt
+          if not "%TEST_EXITCODE%"=="0" powershell -Command "$t = (Get-Content test_output.txt -Tail 50) -join '%%0A'; Write-Output \"::error::$t\""
+          exit /b %TEST_EXITCODE%
 
       - name: Run Tests (Forced Uploads)
         shell: cmd
@@ -49,7 +53,11 @@ jobs:
           APP_KEY_ID_UPLOADTEST: ${{ secrets.APP_KEY_ID_UPLOADTEST }}
           APP_KEY_SECRET_UPLOADTEST: ${{ secrets.APP_KEY_SECRET_UPLOADTEST }}
         run: |
-          niraclient.exe
+          niraclient.exe > test_output.txt 2>&1
+          set TEST_EXITCODE=%ERRORLEVEL%
+          type test_output.txt
+          if not "%TEST_EXITCODE%"=="0" powershell -Command "$t = (Get-Content test_output.txt -Tail 50) -join '%%0A'; Write-Output \"::error::$t\""
+          exit /b %TEST_EXITCODE%
 
       - name: Prepare for Artifact
         run: |
