@@ -34,9 +34,16 @@ IF NOT EXIST "./vcpkg_installed/x64-windows-static-md/lib/libcurl.lib" (
 )
 
 where /q cl.exe
-if ERRORLEVEL 1 (
-    call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" amd64
+if NOT ERRORLEVEL 1 goto :have_cl
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "%VSWHERE%" set "VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
+for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
+if "%VSINSTALLPATH%"=="" (
+    echo ERROR: Could not locate a Visual Studio installation with the C++ toolset.
+    exit /b 1
 )
+call "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvars64.bat" amd64
+:have_cl
 
 set "TRIPLET=%~1"
 if "%TRIPLET%"=="" set "TRIPLET=x64-windows-static-md"
