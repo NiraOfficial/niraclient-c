@@ -52,8 +52,10 @@ set VCPKG_PATH=.\vcpkg_installed\%TRIPLET%
 
 set "ZLIB_LIB=%VCPKG_PATH%\lib\zlib.lib"
 if not exist "%ZLIB_LIB%" set "ZLIB_LIB=%VCPKG_PATH%\lib\zlibstatic.lib"
+if not exist "%ZLIB_LIB%" set "ZLIB_LIB=%VCPKG_PATH%\lib\zs.lib"
 if not exist "%ZLIB_LIB%" (
-    echo ERROR: Could not find zlib.lib or zlibstatic.lib in %VCPKG_PATH%\lib
+    echo ERROR: Could not find zlib.lib, zlibstatic.lib, or zs.lib in %VCPKG_PATH%\lib
+    dir "%VCPKG_PATH%\lib"
     exit /b 1
 )
 
