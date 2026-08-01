@@ -26,7 +26,12 @@ jobs:
         run: vcpkg install
 
       - name: Build niraclient
-        run: call build.bat ${{ env.MY_TRIPLET }}
+        run: |
+          call build.bat ${{ env.MY_TRIPLET }} > build_output.txt 2>&1
+          set BUILD_EXITCODE=%ERRORLEVEL%
+          type build_output.txt
+          if not "%BUILD_EXITCODE%"=="0" powershell -Command "$t = (Get-Content build_output.txt -Tail 50) -join '%%0A'; Write-Output \"::error::$t\""
+          exit /b %BUILD_EXITCODE%
         shell: cmd
 
       - name: Run Tests (Standard)
