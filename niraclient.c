@@ -772,9 +772,26 @@ int32_t getFileSize(NiraClient *_niraClient, NiraAssetFile *_assetFile)
         return NiraGetError(_niraClient);
     }
 
-    fseek(fh, 0L, SEEK_END);
-    _assetFile->size = ftell(fh);
+    #if defined(_WIN32)
+    _fseeki64(fh, 0, SEEK_END);
+    int64_t fileSize = _ftelli64(fh);
+    #else
+    fseeko(fh, 0, SEEK_END);
+    off_t fileSize = ftello(fh);
+    #endif
     fclose(fh);
+
+    if (fileSize < 0)
+    {
+        if (NiraSetError(_niraClient, NIRA_ERROR_FILE_IO))
+        {
+            NIRA_SET_ERR_DETAIL(_niraClient, "ftell: %s (%d)", strerror(errno), errno);
+            NIRA_SET_ERR_MSG(_niraClient, "Could not determine file size: %s", _assetFile->path);
+        }
+        return NiraGetError(_niraClient);
+    }
+
+    _assetFile->size = (size_t)fileSize;
 
     return 0;
 }
